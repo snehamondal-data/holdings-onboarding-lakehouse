@@ -13,3 +13,16 @@ rules:
   required: [security_id, asset_class, currency]
   numeric: []
   dates: {}
+silver:
+  target: security_master
+  key: [security_id]
+  fields:
+    security_id: string
+    isin: string
+    cusip: string
+    ticker: string
+    exchange: string
+    name: string
+    asset_class: string
+    currency: string
+  dedupe: exact

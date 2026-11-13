@@ -14,3 +14,18 @@ rules:
   numeric: [price, market_value, "lots[].quantity"]
   dates:
     position_date: "yyyy-MM-dd"
+silver:
+  target: positions
+  position_side: custodian
+  fields:
+    account_id: account
+    business_date: position_date
+    quantity: "lots[].quantity"   # tax lots summed per position
+    price: price
+    market_value: market_value
+    currency: currency
+  identifier:
+    type: ticker_exchange
+    columns: [ticker, exchange]
+  market_value_multiplier: 1
+  dedupe: exact

@@ -26,6 +26,40 @@ class ConfigError(ValueError):
     pass
 
 
+IDENTIFIER_TYPES = {"isin": 1, "cusip": 1, "ticker_exchange": 2, "security_id": 1}
+POSITION_FIELDS_REQUIRED = ("account_id", "business_date", "quantity", "currency")
+POSITION_FIELDS_OPTIONAL = ("price", "market_value")
+REFERENCE_TYPES = {"string", "date", "decimal(38,6)", "decimal(38,8)", "decimal(38,2)", "bigint"}
+
+
+@dataclass(frozen=True)
+class HeaderVersion:
+    version: int
+    effective_from: str
+    renames: dict           # header as received -> configured column
+    added: tuple = ()
+
+
+@dataclass(frozen=True)
+class SilverConfig:
+    target: str                          # "positions" or a reference table name
+    fields: dict                         # positions: canonical -> bronze column; reference: column -> type
+    position_side: str | None = None     # custodian | book (positions only)
+    identifier_type: str | None = None
+    identifier_columns: tuple = ()
+    market_value_multiplier: float = 1.0
+    key: tuple = ()                      # reference targets: natural key
+    dedupe: str = "exact"
+
+    @property
+    def is_positions(self) -> bool:
+        return self.target == "positions"
+
+    @property
+    def table(self) -> str:
+        return f"silver_{self.target}"
+
+
 @dataclass(frozen=True)
 class SourceConfig:
     source_id: str
@@ -42,6 +76,19 @@ class SourceConfig:
     required: tuple[str, ...] = ()
     numeric: tuple[str, ...] = ()
     dates: dict = field(default_factory=dict)
+    header_versions: tuple = ()
+    silver: SilverConfig | None = None
+
+    def header_version_for(self, rescued_keys) -> int | None:
+        """Highest declared header version whose renamed headers all appear in the row."""
+        if not self.header_versions:
+            return None
+        keys = set(rescued_keys or ())
+        best = self.header_versions[0].version
+        for hv in self.header_versions:
+            if hv.renames and set(hv.renames) <= keys:
+                best = max(best, hv.version)
+        return best
 
     def schema_ddl(self) -> str:
         """All columns are strings unless the config says otherwise (nested JSON)."""
@@ -145,7 +192,13 @@ def parse_source(d: dict, where: str = "source") -> SourceConfig:
             raise ConfigError(f"{where}: date column '{c}' is not in columns")
         if f not in SUPPORTED_DATE_FORMATS:
             raise ConfigError(f"{where}: date format '{f}' not in {sorted(SUPPORTED_DATE_FORMATS)}")
-    aliases = dict(d.get("column_aliases") or {})
+    aliases = {k: list(v) for k, v in (d.get("column_aliases") or {}).items()}
+    header_versions = _parse_header_versions(d.get("header_versions") or [], known, where)
+    for hv in header_versions:
+        for received, configured in hv.renames.items():
+            aliases.setdefault(configured, [])
+            if received not in aliases[configured]:
+                aliases[configured].append(received)
     for c, names in aliases.items():
         if c not in known:
             raise ConfigError(f"{where}: alias target '{c}' is not in columns")
@@ -174,7 +227,83 @@ def parse_source(d: dict, where: str = "source") -> SourceConfig:
         required=required,
         numeric=numeric,
         dates=dates,
+        header_versions=header_versions,
+        silver=_parse_silver(d.get("silver"), known, column_types, dates, where),
     )
+
+
+def _parse_header_versions(raw: list, known: set, where: str) -> tuple:
+    out, seen = [], set()
+    for hv in raw:
+        v = hv.get("version")
+        if not isinstance(v, int) or v in seen:
+            raise ConfigError(f"{where}: header_versions need unique integer versions")
+        seen.add(v)
+        renames = dict(hv.get("renames") or {})
+        for received, configured in renames.items():
+            _check_ident(received, "renamed header", where)
+            if configured not in known:
+                raise ConfigError(f"{where}: header rename target '{configured}' is not in columns")
+        out.append(HeaderVersion(v, str(_need(hv, "effective_from", where)), renames,
+                                 tuple(hv.get("added") or ())))
+    if [h.version for h in out] != sorted(h.version for h in out):
+        raise ConfigError(f"{where}: header_versions must be listed in version order")
+    return tuple(out)
+
+
+def _column_ref_ok(ref: str, known: set, column_types: dict) -> bool:
+    if "[]." in ref:
+        arr = ref.split("[].", 1)[0]
+        return arr in known and column_types.get(arr, "").lower().startswith("array")
+    return ref in known
+
+
+def _parse_silver(d: dict | None, known: set, column_types: dict, dates: dict, where: str):
+    if d is None:
+        return None
+    where = f"{where} (silver)"
+    target = _need(d, "target", where)
+    _check_ident(target, "target", where)
+    fields = dict(_need(d, "fields", where))
+    dedupe = d.get("dedupe", "exact")
+    if dedupe not in ("exact", "none"):
+        raise ConfigError(f"{where}: dedupe must be 'exact' or 'none'")
+    if target == "positions":
+        side = _need(d, "position_side", where)
+        if side not in ("custodian", "book"):
+            raise ConfigError(f"{where}: position_side must be custodian or book")
+        for f in POSITION_FIELDS_REQUIRED:
+            if f not in fields:
+                raise ConfigError(f"{where}: positions mapping needs field '{f}'")
+        for f, ref in fields.items():
+            if f not in POSITION_FIELDS_REQUIRED + POSITION_FIELDS_OPTIONAL:
+                raise ConfigError(f"{where}: '{f}' is not a canonical position field")
+            if not _column_ref_ok(ref, known, column_types):
+                raise ConfigError(f"{where}: field '{f}' maps to unknown column '{ref}'")
+        if fields["business_date"] not in dates:
+            raise ConfigError(f"{where}: business_date column needs a format in rules.dates")
+        ident = _need(d, "identifier", where)
+        itype = _need(ident, "type", where)
+        if itype not in IDENTIFIER_TYPES:
+            raise ConfigError(f"{where}: identifier type '{itype}' not in {sorted(IDENTIFIER_TYPES)}")
+        icols = tuple(_need(ident, "columns", where))
+        if len(icols) != IDENTIFIER_TYPES[itype] or any(c not in known for c in icols):
+            raise ConfigError(f"{where}: identifier '{itype}' needs {IDENTIFIER_TYPES[itype]} known column(s)")
+        mult = float(d.get("market_value_multiplier", 1))
+        if mult <= 0:
+            raise ConfigError(f"{where}: market_value_multiplier must be positive")
+        return SilverConfig(target, fields, side, itype, icols, mult, (), dedupe)
+    key = tuple(_need(d, "key", where))
+    for c, t in fields.items():
+        if c not in known:
+            raise ConfigError(f"{where}: field '{c}' is not in columns")
+        if t not in REFERENCE_TYPES:
+            raise ConfigError(f"{where}: type '{t}' for '{c}' not in {sorted(REFERENCE_TYPES)}")
+        if t == "date" and c not in dates:
+            raise ConfigError(f"{where}: date field '{c}' needs a format in rules.dates")
+    if not key or any(k not in fields for k in key):
+        raise ConfigError(f"{where}: key must be a non-empty subset of fields")
+    return SilverConfig(target, fields, key=key, dedupe=dedupe)
 
 
 def parse_client(d: dict, where: str = "client") -> ClientConfig:

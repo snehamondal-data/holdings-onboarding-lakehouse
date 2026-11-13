@@ -1,8 +1,10 @@
 """Render each source's daily file in its own format.
 
-Every writer returns (text, row_reasons): row_reasons has one entry per data
-record, the bronze quarantine reason the generator planted (or None if clean).
-That list is what the ground truth's expected per-file counts are built from.
+Every writer returns (text, row_reasons, silver_tags), one entry per data record:
+  row_reasons  the bronze quarantine reason the generator planted, or None if clean;
+  silver_tags  what silver should do with a clean row: None (into silver),
+               "deduped", "unresolved" or "units_scale_suspect".
+The ground truth's expected per-file counts are built from these lists.
 """
 from __future__ import annotations
 
@@ -28,9 +30,9 @@ def _m(x: float) -> str:
     return f"{x:.2f}"
 
 
-def harrow_file(world: World, d: int, recs: list[dict]) -> tuple[str, list]:
+def harrow_file(world: World, d: int, recs: list[dict], unresolved: set = frozenset()) -> tuple:
     day = world.days[d]
-    lines, reasons = [",".join(HARROW_HEADER)], []
+    lines, reasons, tags = [",".join(HARROW_HEADER)], [], []
     for r in recs:
         sec = world.securities[r["security_id"]]
         fields = [r["account"], day.isoformat(), sec.isin, sec.name, str(r["quantity"]),
@@ -44,16 +46,18 @@ def harrow_file(world: World, d: int, recs: list[dict]) -> tuple[str, list]:
             fields[2] = ""
         line = ",".join(fields)
         copies = 2 if r["duplicate"] else 1
-        for _ in range(copies):
+        for copy in range(copies):
             lines.append(line)
             reasons.append(CORRUPT_REASON[kind] if kind else None)
-    return "\n".join(lines) + "\n", reasons
+            tags.append("deduped" if copy else ("unresolved" if r["security_id"] in unresolved else None))
+    return "\n".join(lines) + "\n", reasons, tags
 
 
-def linden_file(world: World, d: int, recs: list[dict], drift: bool, units_error: bool) -> tuple[str, list]:
+def linden_file(world: World, d: int, recs: list[dict], drift: bool, units_error: bool,
+                unresolved: set = frozenset()) -> tuple:
     day = world.days[d]
     header = LINDEN_DRIFT_HEADER if drift else LINDEN_HEADER
-    lines, reasons = ["|".join(header)], []
+    lines, reasons, tags = ["|".join(header)], [], []
     for r in recs:
         sec = world.securities[r["security_id"]]
         mv = r["market_value"] if units_error else r["market_value"] / 1000.0
@@ -70,12 +74,14 @@ def linden_file(world: World, d: int, recs: list[dict], drift: bool, units_error
             fields[4] = "N/A"
         lines.append("|".join(fields))
         reasons.append(CORRUPT_REASON[kind] if kind else None)
-    return "\n".join(lines) + "\n", reasons
+        tags.append("unresolved" if r["security_id"] in unresolved
+                    else ("units_scale_suspect" if units_error else None))
+    return "\n".join(lines) + "\n", reasons, tags
 
 
-def pemberton_file(world: World, d: int, recs: list[dict]) -> tuple[str, list]:
+def pemberton_file(world: World, d: int, recs: list[dict], unresolved: set = frozenset()) -> tuple:
     day = world.days[d]
-    lines, reasons = [], []
+    lines, reasons, tags = [], [], []
     for r in recs:
         sec = world.securities[r["security_id"]]
         lots = [dict(l) for l in r["lots"]]
@@ -90,15 +96,16 @@ def pemberton_file(world: World, d: int, recs: list[dict]) -> tuple[str, list]:
             line = line[: len(line) // 2]
         lines.append(line)
         reasons.append(CORRUPT_REASON[kind] if kind else None)
-    return "\n".join(lines) + "\n", reasons
+        tags.append("unresolved" if r["security_id"] in unresolved else None)
+    return "\n".join(lines) + "\n", reasons, tags
 
 
-def _csv(header: list[str], rows: list[list]) -> tuple[str, list]:
+def _csv(header: list[str], rows: list[list]) -> tuple:
     lines = [",".join(header)] + [",".join(str(v) for v in row) for row in rows]
-    return "\n".join(lines) + "\n", [None] * len(rows)
+    return "\n".join(lines) + "\n", [None] * len(rows), [None] * len(rows)
 
 
-def book_positions_file(world: World, d: int) -> tuple[str, list]:
+def book_positions_file(world: World, d: int) -> tuple:
     day = world.days[d].isoformat()
     rows = []
     for acct, held in world.positions[d].items():
@@ -108,14 +115,14 @@ def book_positions_file(world: World, d: int) -> tuple[str, list]:
     return _csv(["as_of_date", "account_id", "custodian", "security_id", "quantity", "currency"], rows)
 
 
-def book_trades_file(world: World, d: int) -> tuple[str, list]:
+def book_trades_file(world: World, d: int) -> tuple:
     rows = [[t.trade_id, t.trade_date.isoformat(), t.account_id, t.custodian.upper(), t.security_id,
              t.side, t.quantity, _p(t.price), t.currency] for t in world.trades[d]]
     return _csv(["trade_id", "trade_date", "account_id", "custodian", "security_id", "side",
                  "quantity", "price", "currency"], rows)
 
 
-def security_master_file(world: World, blanks: dict[str, tuple[str, ...]]) -> tuple[str, list]:
+def security_master_file(world: World, blanks: dict[str, tuple[str, ...]]) -> tuple:
     rows = []
     for sid, s in sorted(world.securities.items()):
         blank = blanks.get(sid, ())
@@ -126,13 +133,13 @@ def security_master_file(world: World, blanks: dict[str, tuple[str, ...]]) -> tu
                  "currency"], rows)
 
 
-def prices_file(world: World, d: int) -> tuple[str, list]:
+def prices_file(world: World, d: int) -> tuple:
     day = world.days[d].isoformat()
     rows = [[day, sid, _p(p), world.securities[sid].currency] for sid, p in sorted(world.prices[d].items())]
     return _csv(["price_date", "security_id", "close_price", "currency"], rows)
 
 
-def fx_file(world: World, d: int) -> tuple[str, list]:
+def fx_file(world: World, d: int) -> tuple:
     day = world.days[d].isoformat()
     rows = [[day, c, f"{v:.6f}"] for c, v in sorted(world.fx[d].items())]
     return _csv(["rate_date", "currency", "usd_per_unit"], rows)

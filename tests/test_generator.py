@@ -5,6 +5,7 @@ from pathlib import Path
 
 from keelstone.config import load_source
 from keelstone.generator import generate
+from keelstone.generator.plants import IDENTIFIER_FIELD
 from keelstone.generator.universe import cusip_check_digit, isin_check_digit
 from keelstone.ingest.local_reader import read_rows
 from keelstone.ingest.rules import quarantine_reason
@@ -104,7 +105,7 @@ def test_unmapped_identifiers_are_blank_in_master_but_used_by_custodian(generate
     rows = {l.split(",")[0]: l.split(",") for l in master.splitlines()[1:]}
     col = {"isin": 1, "cusip": 2, "ticker": 3, "exchange": 4}
     for p in [p for p in truth["planted"] if p["problem"] == "unmapped_security"]:
-        for field in p["identifier_type"].split("+"):
+        for field in IDENTIFIER_FIELD[p["source"]]:
             assert rows[p["security_id"]][col[field]] == ""
         assert p["affected_rows"] > 0
 

@@ -14,3 +14,12 @@ rules:
   numeric: [close_price]
   dates:
     price_date: "yyyy-MM-dd"
+silver:
+  target: prices
+  key: [price_date, security_id]
+  fields:
+    price_date: date
+    security_id: string
+    close_price: "decimal(38,6)"
+    currency: string
+  dedupe: exact

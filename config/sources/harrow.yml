@@ -15,3 +15,18 @@ rules:
   numeric: [quantity, price, market_value]
   dates:
     as_of_date: "yyyy-MM-dd"
+silver:
+  target: positions
+  position_side: custodian
+  fields:                       # canonical field: bronze column
+    account_id: account_id
+    business_date: as_of_date   # parsed with rules.dates[as_of_date]
+    quantity: quantity
+    price: price
+    market_value: market_value
+    currency: currency
+  identifier:
+    type: isin
+    columns: [isin]
+  market_value_multiplier: 1    # values in units
+  dedupe: exact                 # Harrow sometimes repeats a row; keep one, log the count

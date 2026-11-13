@@ -9,6 +9,12 @@ variables:
   client:
     description: Client config to run (config/clients/<client>.yml)
     default: calder_valley
+  wheel_path:
+    description: Content-versioned project wheel for pipelines (set by scripts/deploy.py)
+    default: /Volumes/keelstone/platform/artifacts/keelstone_holdings-0.1.0-py3-none-any.whl
+  config_dir:
+    description: YAML configs uploaded by scripts/deploy.py
+    default: /Volumes/keelstone/platform/artifacts/config
 
 targets:
   dev:
@@ -23,3 +29,4 @@ sync:
     - data/**
     - .venv/**
     - tests/**
+    - dist/**

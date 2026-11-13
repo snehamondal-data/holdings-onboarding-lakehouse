@@ -38,8 +38,27 @@ def _next_business_day(d: date) -> date:
     return d
 
 
+def _silver_expectation(reasons: list, tags: list) -> dict:
+    """What silver should do with each clean bronze row of a file."""
+    out = {"rows": 0, "unresolved": 0, "deduped": 0, "quarantine": {}}
+    for reason, tag in zip(reasons, tags):
+        if reason:                       # quarantined in bronze, never reaches silver
+            continue
+        if tag is None:
+            out["rows"] += 1
+        elif tag in ("unresolved", "deduped"):
+            out[tag] += 1
+        else:
+            out["quarantine"][tag] = out["quarantine"].get(tag, 0) + 1
+    return out
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _unmapped_by_custodian(planter: Planter) -> dict:
+    return {p["security_id"]: p["source"] for p in planter.planted if p["problem"] == "unmapped_security"}
 
 
 def generate(out_dir: Path | str, seed: int = DEFAULTS["seed"], start: date = DEFAULTS["start"],
@@ -62,7 +81,7 @@ def generate(out_dir: Path | str, seed: int = DEFAULTS["seed"], start: date = DE
 
     def emit(source: str, d: int, name: str, rendered: tuple[str, list], delivery: date | None = None,
              drift_columns: list | None = None) -> str:
-        text, reasons = rendered
+        text, reasons, tags = rendered
         bdate = world.days[d]
         rel = f"{SUBDIR[source]}/{bdate.isoformat()}/{name}"
         path = out / "landing" / rel
@@ -79,39 +98,43 @@ def generate(out_dir: Path | str, seed: int = DEFAULTS["seed"], start: date = DE
             "expected_bronze_rows": len(reasons) - sum(q.values()),
             "expected_quarantine": dict(sorted(q.items())),
             "expected_drift_columns": drift_columns or [], "duplicate_of": None,
+            "expected_silver": _silver_expectation(reasons, tags),
         }
         return rel
 
+    unresolved = {c: {sid for sid, p in _unmapped_by_custodian(planter).items() if p == c}
+                  for c in ("harrow", "linden", "pemberton")}
     drift_files = []
     for d, day in enumerate(world.days):
         ymd = day.strftime("%Y%m%d")
-        h = emit("harrow", d, f"harrow_positions_{ymd}.csv", W.harrow_file(world, d, planter.views["harrow"][d]))
+        h = emit("harrow", d, f"harrow_positions_{ymd}.csv", W.harrow_file(world, d, planter.views["harrow"][d], unresolved["harrow"]))
         if d == spec.harrow_resend_day:
             text = (out / "landing" / h).read_text(encoding="utf-8")
             rel = h.replace(".csv", "_resend.csv")
             (out / "landing" / rel).write_text(text, encoding="utf-8")
             files[rel] = dict(files[h], delivery_date=_next_business_day(day).isoformat(),
                               expected_status="duplicate_content", expected_bronze_rows=0,
-                              expected_quarantine={}, duplicate_of=h)
+                              expected_quarantine={}, duplicate_of=h,
+                              expected_silver={"rows": 0, "unresolved": 0, "deduped": 0, "quarantine": {}})
             planter._add("duplicate_file", source="harrow", business_date=day.isoformat(), file=rel,
                          duplicate_of=h, expected_reason="duplicate_content", checked_in_slice=1,
                          details="same bytes re-sent under a new name the next day; must load once")
         drift = d >= spec.linden_drift_from_day
         units = d == spec.linden_units_error_day
         lrel = emit("linden", d, f"linden_holdings_{ymd}.txt",
-                    W.linden_file(world, d, planter.views["linden"][d], drift, units),
+                    W.linden_file(world, d, planter.views["linden"][d], drift, units, unresolved["linden"]),
                     drift_columns=W.LINDEN_DRIFT_COLUMNS if drift else None)
         if drift:
             drift_files.append(lrel)
         if units:
             planter._add("units_error", source="linden", business_date=day.isoformat(), file=lrel,
                          rows=len(planter.views["linden"][d]), scale_factor=1000,
-                         expected_reason="units_scale_error", checked_in_slice=2,
+                         expected_reason="units_scale_suspect", checked_in_slice=2,
                          details="MKT_VALUE_000 holds full values, not thousands; applying the "
                                  "configured x1000 makes them 1000 times too large")
         late = d == spec.pemberton_late_day
         prel = emit("pemberton", d, f"pemberton_positions_{ymd}.jsonl",
-                    W.pemberton_file(world, d, planter.views["pemberton"][d]),
+                    W.pemberton_file(world, d, planter.views["pemberton"][d], unresolved["pemberton"]),
                     delivery=_next_business_day(day) if late else None)
         if late:
             planter._add("late_file", source="pemberton", business_date=day.isoformat(), file=prel,

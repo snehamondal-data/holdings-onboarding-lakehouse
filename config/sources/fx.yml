@@ -14,3 +14,11 @@ rules:
   numeric: [usd_per_unit]
   dates:
     rate_date: "yyyy-MM-dd"
+silver:
+  target: fx
+  key: [rate_date, currency]
+  fields:
+    rate_date: date
+    currency: string
+    usd_per_unit: "decimal(38,8)"
+  dedupe: exact

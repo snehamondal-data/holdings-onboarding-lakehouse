@@ -44,6 +44,7 @@ CORRUPT_REASON = {
 }
 
 IDENTIFIER_FIELD = {"harrow": ("isin",), "linden": ("cusip",), "pemberton": ("ticker", "exchange")}
+IDENTIFIER_TYPE = {"harrow": "isin", "linden": "cusip", "pemberton": "ticker_exchange"}
 
 
 def _record(world: World, d: int, acct: str, sid: str, lots: list[dict], price: float) -> dict:
@@ -123,10 +124,10 @@ class Planter:
                 fields = IDENTIFIER_FIELD[cust]
                 self.master_blanks[sid] = fields
                 sec = self.world.securities[sid]
-                ident = " ".join(getattr(sec, f) for f in fields)
+                ident = ":".join(getattr(sec, f) for f in fields)   # same form silver uses
                 self._add("unmapped_security", source=cust, security_id=sid,
-                          identifier_type="+".join(fields), identifier=ident,
-                          expected_reason="unmapped_security", checked_in_slice=2,
+                          identifier_type=IDENTIFIER_TYPE[cust], identifier=ident,
+                          expected_reason="unmapped_identifier", checked_in_slice=2,
                           details="identifier removed from the security master; every row of it "
                                   "from this custodian must land in the unresolved queue")
 

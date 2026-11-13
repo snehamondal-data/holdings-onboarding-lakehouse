@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from build_wheel import WHEEL_NAME, build  # noqa: E402
+from build_wheel import WHEEL_NAME, build, content_version, wheel_name  # noqa: E402
 
 CLI = str(Path.home() / ".local/bin/databricks")
 PROFILE = "keelstone"
@@ -25,14 +25,22 @@ def run(*args: str, ok_if: str | None = None) -> None:
         sys.exit(r.stderr or r.stdout)
 
 
+def bundle_vars() -> list[str]:
+    """Pipelines install the content-versioned wheel, so a code change is never served from cache."""
+    return ["--var", f"wheel_path={ARTIFACTS}/wheels/{wheel_name(content_version())}"]
+
+
 def main() -> None:
     wheel = build()
+    versioned = build(version=content_version())
     run("schemas", "create", "platform", "keelstone", "--comment",
         "Shared platform artifacts (code wheel, configs)", ok_if="already exists")
     run("volumes", "create", "keelstone", "platform", "artifacts", "MANAGED", ok_if="already exists")
     run("fs", "cp", str(wheel), f"dbfs:{ARTIFACTS}/{WHEEL_NAME}", "--overwrite")
+    run("fs", "mkdir", f"dbfs:{ARTIFACTS}/wheels")
+    run("fs", "cp", str(versioned), f"dbfs:{ARTIFACTS}/wheels/{versioned.name}", "--overwrite")
     run("fs", "cp", "-r", str(ROOT / "config"), f"dbfs:{ARTIFACTS}/config", "--overwrite")
-    subprocess.run([CLI, "bundle", "deploy"], cwd=ROOT, check=True)
+    subprocess.run([CLI, "bundle", "deploy", *bundle_vars()], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

@@ -14,3 +14,17 @@ rules:
   numeric: [quantity, price]
   dates:
     trade_date: "yyyy-MM-dd"
+silver:
+  target: trades
+  key: [trade_id]
+  fields:
+    trade_id: string
+    trade_date: date
+    account_id: string
+    custodian: string
+    security_id: string
+    side: string
+    quantity: "decimal(38,6)"
+    price: "decimal(38,6)"
+    currency: string
+  dedupe: exact

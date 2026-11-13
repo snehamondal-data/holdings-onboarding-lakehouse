@@ -9,13 +9,35 @@ options:
   header: true
 bronze_table: bronze_linden
 columns: [ACCT, POS_DATE, CUSIP, DESCRIPTION, NOMINAL, MKT_PRICE, MKT_VALUE_000, CCY]
-# Header names the bank switched to mid-period. Drift is still logged for every
-# file that uses them; the alias only tells bronze where to find the value.
-column_aliases:
-  DESCRIPTION: [SEC_DESC]
-  MKT_VALUE_000: [MARKET_VALUE_THOUSANDS]
+# Versioned header mapping. Version 2 was added after bronze_schema_drift_log flagged
+# the new header; bronze aliases are derived from the renames here.
+header_versions:
+  - version: 1
+    effective_from: "2026-07-01"
+    renames: {}
+  - version: 2
+    effective_from: "2026-08-05"
+    renames:                    # header as received: configured column
+      SEC_DESC: DESCRIPTION
+      MARKET_VALUE_THOUSANDS: MKT_VALUE_000
+    added: [SETTLE_STATUS]
 rules:
   required: [ACCT, POS_DATE, CUSIP, NOMINAL]
   numeric: [NOMINAL, MKT_PRICE, MKT_VALUE_000]
   dates:
     POS_DATE: "dd/MM/yyyy"
+silver:
+  target: positions
+  position_side: custodian
+  fields:
+    account_id: ACCT
+    business_date: POS_DATE
+    quantity: NOMINAL
+    price: MKT_PRICE
+    market_value: MKT_VALUE_000
+    currency: CCY
+  identifier:
+    type: cusip
+    columns: [CUSIP]
+  market_value_multiplier: 1000 # Linden reports market value in thousands
+  dedupe: exact

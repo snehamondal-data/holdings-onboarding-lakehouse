@@ -14,3 +14,16 @@ rules:
   numeric: [quantity]
   dates:
     as_of_date: "yyyy-MM-dd"
+silver:
+  target: positions
+  position_side: book
+  fields:
+    account_id: account_id
+    business_date: as_of_date
+    quantity: quantity
+    currency: currency          # the book carries no price or value; gold values it
+  identifier:
+    type: security_id           # already the internal id; still checked against the master
+    columns: [security_id]
+  market_value_multiplier: 1
+  dedupe: exact

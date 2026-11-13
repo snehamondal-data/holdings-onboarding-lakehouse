@@ -24,6 +24,7 @@ def pipeline_files() -> list[Path]:
     for pkg in PIPELINE_PACKAGES:
         files += sorted((REPO / pkg).rglob("*.py"))
     files += sorted(p for p in (REPO / "jobs").glob("*.py") if p.name.startswith(PIPELINE_JOB_PREFIXES))
+    files += sorted((REPO / "pipelines").glob("*.py"))
     files += [REPO / "src" / "keelstone" / "config.py"]
     return files
 
@@ -37,7 +38,8 @@ def _hits(path: Path) -> list[str]:
 
 def test_pipeline_code_never_references_qa():
     files = pipeline_files()
-    assert any(f.name == "ingest_bronze.py" for f in files)
+    names = {str(f.relative_to(REPO)) for f in files}
+    assert {"jobs/ingest_bronze.py", "pipelines/silver.py", "src/keelstone/silver/pipeline.py"} <= names
     offenders = {str(f.relative_to(REPO)): h for f in files if (h := _hits(f))}
     assert not offenders, offenders
 
@@ -56,7 +58,7 @@ def test_pipeline_plans_point_only_at_the_client_schema():
 
 def test_only_validation_tasks_get_qa_inputs_in_the_bundle():
     for job_file in (REPO / "resources").glob("*.yml"):
-        jobs = yaml.safe_load(job_file.read_text())["resources"]["jobs"]
+        jobs = yaml.safe_load(job_file.read_text())["resources"].get("jobs", {})
         for job in jobs.values():
             for task in job["tasks"]:
                 nb = task.get("notebook_task", {})
@@ -64,3 +66,11 @@ def test_only_validation_tasks_get_qa_inputs_in_the_bundle():
                 params = " ".join(f"{k} {v}" for k, v in nb.get("base_parameters", {}).items())
                 if not Path(script).name.startswith("validate_"):
                     assert "qa" not in params.split() and "ground_truth" not in params, task["task_key"]
+
+
+def test_silver_pipeline_config_does_not_point_at_qa():
+    for f in (REPO / "resources").glob("*.pipeline.yml"):
+        for pipe in yaml.safe_load(f.read_text())["resources"]["pipelines"].values():
+            assert pipe["schema"] != "qa"
+            assert not any("qa" in str(v).split(".") or "/qa/" in str(v)
+                           for v in (pipe.get("configuration") or {}).values())

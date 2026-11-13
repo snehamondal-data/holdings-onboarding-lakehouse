@@ -1,0 +1,20 @@
+# Silver as a Lakeflow declarative pipeline (serverless). Free Edition allows one
+# active pipeline per type, so clients' silver pipelines run one at a time.
+resources:
+  pipelines:
+    silver:
+      name: keelstone-silver-${var.client}
+      catalog: keelstone
+      schema: ${var.client}
+      serverless: true
+      continuous: false
+      channel: CURRENT
+      configuration:
+        keelstone.client: ${var.client}
+        keelstone.config_dir: ${var.config_dir}
+      environment:
+        dependencies:
+          - ${var.wheel_path}
+      libraries:
+        - file:
+            path: ../pipelines/silver.py
