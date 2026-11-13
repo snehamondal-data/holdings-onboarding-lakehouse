@@ -1,0 +1,16 @@
+source_id: prices
+display_name: Daily closing prices (reference)
+kind: reference
+format: csv
+landing_subdir: reference/prices
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_prices
+columns: [price_date, security_id, close_price, currency]
+rules:
+  required: [price_date, security_id, close_price]
+  numeric: [close_price]
+  dates:
+    price_date: "yyyy-MM-dd"

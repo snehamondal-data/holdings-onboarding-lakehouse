@@ -1,0 +1,15 @@
+source_id: security_master
+display_name: Keelstone security master (reference)
+kind: reference
+format: csv
+landing_subdir: reference/security_master
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_security_master
+columns: [security_id, isin, cusip, ticker, exchange, name, asset_class, currency]
+rules:
+  required: [security_id, asset_class, currency]
+  numeric: []
+  dates: {}

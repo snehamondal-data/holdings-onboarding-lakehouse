@@ -1,0 +1,17 @@
+source_id: harrow
+display_name: Harrow Trust (fictional custodian)
+kind: custodian
+format: csv
+landing_subdir: harrow
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_harrow
+# Columns as received, in header order. Bronze keeps every value as a string.
+columns: [account_id, as_of_date, isin, security_name, quantity, price, market_value, currency]
+rules:
+  required: [account_id, as_of_date, isin, quantity]
+  numeric: [quantity, price, market_value]
+  dates:
+    as_of_date: "yyyy-MM-dd"

@@ -1,0 +1,16 @@
+source_id: book_trades
+display_name: Client book of record, daily trades
+kind: book_of_record
+format: csv
+landing_subdir: book_of_record/trades
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_book_trades
+columns: [trade_id, trade_date, account_id, custodian, security_id, side, quantity, price, currency]
+rules:
+  required: [trade_id, trade_date, account_id, security_id, side, quantity]
+  numeric: [quantity, price]
+  dates:
+    trade_date: "yyyy-MM-dd"

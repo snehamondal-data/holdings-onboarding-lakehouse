@@ -1,0 +1,16 @@
+source_id: book_positions
+display_name: Client book of record, daily positions
+kind: book_of_record
+format: csv
+landing_subdir: book_of_record/positions
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_book_positions
+columns: [as_of_date, account_id, custodian, security_id, quantity, currency]
+rules:
+  required: [as_of_date, account_id, custodian, security_id, quantity]
+  numeric: [quantity]
+  dates:
+    as_of_date: "yyyy-MM-dd"

@@ -1,0 +1,25 @@
+# Databricks Asset Bundle (Declarative Automation Bundle). Free Edition: serverless only.
+bundle:
+  name: holdings-onboarding-lakehouse
+
+include:
+  - resources/*.yml
+
+variables:
+  client:
+    description: Client config to run (config/clients/<client>.yml)
+    default: calder_valley
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      # Host comes from the CLI profile (~/.databrickscfg), so no workspace URL is committed.
+      profile: keelstone
+
+sync:
+  exclude:
+    - data/**
+    - .venv/**
+    - tests/**

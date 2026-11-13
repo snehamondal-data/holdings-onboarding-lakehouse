@@ -1,0 +1,17 @@
+# Client onboarding config. A new client is a new file like this one, not new code.
+# All names are fictional (synthetic data).
+client_id: calder_valley
+display_name: "Calder Valley Teachers' Retirement System (fictional)"
+catalog: keelstone
+schema: calder_valley            # every table for this client lives here (tenant isolation)
+landing_volume: landing          # /Volumes/<catalog>/<schema>/<landing_volume>/<source landing_subdir>/...
+checkpoint_volume: _checkpoints
+sources:
+  - harrow
+  - linden
+  - pemberton
+  - book_positions
+  - book_trades
+  - security_master
+  - prices
+  - fx

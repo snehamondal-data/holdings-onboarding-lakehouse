@@ -1,0 +1,10 @@
+[project]
+name = "keelstone-holdings-onboarding"
+version = "0.1.0"
+description = "Holdings onboarding lakehouse on Databricks (synthetic data, fictional companies)"
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

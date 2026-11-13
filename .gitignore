@@ -1,0 +1,27 @@
+# secrets
+.env
+.env.*
+.databrickscfg
+*.pem
+
+# python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# generated data (never committed; regenerate from the fixed seed)
+data/
+
+# databricks bundle local state
+.databricks/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+
+# built wheels
+dist/

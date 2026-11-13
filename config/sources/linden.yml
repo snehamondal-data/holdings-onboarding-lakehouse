@@ -1,0 +1,21 @@
+source_id: linden
+display_name: Linden Bank (fictional custodian)
+kind: custodian
+format: csv
+landing_subdir: linden
+file_glob: "*.txt"
+options:
+  delimiter: "|"
+  header: true
+bronze_table: bronze_linden
+columns: [ACCT, POS_DATE, CUSIP, DESCRIPTION, NOMINAL, MKT_PRICE, MKT_VALUE_000, CCY]
+# Header names the bank switched to mid-period. Drift is still logged for every
+# file that uses them; the alias only tells bronze where to find the value.
+column_aliases:
+  DESCRIPTION: [SEC_DESC]
+  MKT_VALUE_000: [MARKET_VALUE_THOUSANDS]
+rules:
+  required: [ACCT, POS_DATE, CUSIP, NOMINAL]
+  numeric: [NOMINAL, MKT_PRICE, MKT_VALUE_000]
+  dates:
+    POS_DATE: "dd/MM/yyyy"

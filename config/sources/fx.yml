@@ -1,0 +1,16 @@
+source_id: fx
+display_name: Daily FX rates to USD (reference)
+kind: reference
+format: csv
+landing_subdir: reference/fx
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_fx
+columns: [rate_date, currency, usd_per_unit]
+rules:
+  required: [rate_date, currency, usd_per_unit]
+  numeric: [usd_per_unit]
+  dates:
+    rate_date: "yyyy-MM-dd"

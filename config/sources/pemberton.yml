@@ -1,0 +1,16 @@
+source_id: pemberton
+display_name: Pemberton Custody (fictional custodian)
+kind: custodian
+format: json                     # JSON Lines: one position per line, tax lots nested
+landing_subdir: pemberton
+file_glob: "*.jsonl"
+options: {}
+bronze_table: bronze_pemberton
+columns: [account, position_date, ticker, exchange, currency, price, market_value, lots]
+column_types:
+  lots: "array<struct<lot_id:string,quantity:string,acquired:string,cost_basis:string>>"
+rules:
+  required: [account, position_date, ticker, exchange, lots]
+  numeric: [price, market_value, "lots[].quantity"]
+  dates:
+    position_date: "yyyy-MM-dd"
