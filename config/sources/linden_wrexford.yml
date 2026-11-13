@@ -1,0 +1,31 @@
+source_id: linden_wrexford
+display_name: Linden Bank, global custody CSV (fictional custodian)
+kind: custodian
+format: csv
+landing_subdir: linden
+file_glob: "*.csv"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_linden_wrexford
+columns: [AccountNo, ValuationDate, ISIN, SecurityName, Units, ClosePrice, MarketValueLocal, Currency]
+rules:
+  required: [AccountNo, ValuationDate, ISIN, Units]
+  numeric: [Units, ClosePrice, MarketValueLocal]
+  dates:
+    ValuationDate: "yyyyMMdd"
+silver:
+  target: positions
+  position_side: custodian
+  fields:
+    account_id: AccountNo
+    business_date: ValuationDate
+    quantity: Units
+    price: ClosePrice
+    market_value: MarketValueLocal
+    currency: Currency
+  identifier:
+    type: isin
+    columns: [ISIN]
+  market_value_multiplier: 1
+  dedupe: exact

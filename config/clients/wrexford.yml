@@ -1,0 +1,19 @@
+# Second client, onboarded in slice 4 by config only. All names are fictional (synthetic data).
+client_id: wrexford
+display_name: "Wrexford County Firefighters' Pension Fund (fictional)"
+catalog: keelstone
+schema: wrexford                 # its own schema: isolated from every other client
+landing_volume: landing
+checkpoint_volume: _checkpoints
+sources:
+  - linden_wrexford              # Linden Bank, in the layout it uses for this client
+  - quayside
+  - wrexford_book
+  - security_master              # shared reference formats, landed separately per client
+  - prices
+  - fx
+reconciliation:
+  quantity_tolerance: 0
+  value_tolerance:
+    absolute: 250                # this client's own operations policy
+    relative: 0.001

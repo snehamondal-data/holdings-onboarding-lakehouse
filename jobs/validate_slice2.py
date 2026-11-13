@@ -9,7 +9,8 @@ dbutils.library.restartPython()  # noqa: F821
 
 # Code comes from the wheel in the artifacts volume, configs from the same volume:
 # serverless cannot reliably read bundle files under /Workspace on this workspace.
-"""Slice 2 validation (reads ground truth from keelstone.qa; the only kind of job allowed to).
+"""Silver validation for one client (reads ground truth from keelstone.qa; only validation jobs may).
+Checks the files delivered so far; idempotency snapshots are checked when require_snapshots is true.
 
 Fails the run if any check fails:
   1. idempotency: every silver table is identical after update, re-run and full refresh;
@@ -23,6 +24,7 @@ Fails the run if any check fails:
   9. the pipeline's expectation counts (event log) match the routed rows.
 """
 import json
+import os
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
@@ -35,6 +37,8 @@ from keelstone.qa import QA_CATALOG, QA_SCHEMA, ground_truth_path
 dbutils.widgets.text("client", "")  # noqa: F821
 dbutils.widgets.text("run_tag", "")  # noqa: F821
 dbutils.widgets.text("config_dir", "/Volumes/keelstone/platform/artifacts/config")  # noqa: F821
+dbutils.widgets.text("require_snapshots", "true")  # noqa: F821
+require_snapshots = dbutils.widgets.get("require_snapshots").lower() == "true"  # noqa: F821
 client_id = dbutils.widgets.get("client")  # noqa: F821
 run_tag = dbutils.widgets.get("run_tag")  # noqa: F821
 CONFIG_DIR = dbutils.widgets.get("config_dir")  # noqa: F821
@@ -46,6 +50,7 @@ truth = json.load(open(ground_truth_path(client_id)))
 T = lambda name: f"{client.catalog}.{client.schema}.{name}"  # noqa: E731
 root = client.landing_root + "/"
 rel = lambda p: p.replace("dbfs:", "", 1)[len(root):] if p else p  # noqa: E731
+landed = {os.path.join(d, f)[len(root):] for d, _, fs in os.walk(client.landing_root) for f in fs}
 
 failures: list[str] = []
 def check(ok: bool, msg: str) -> None:
@@ -62,10 +67,11 @@ def per_file(table: str, file_col: str = "source_file", where=None) -> Counter:
 snaps = defaultdict(dict)
 for r in spark.table(f"{QA_CATALOG}.{QA_SCHEMA}.silver_snapshots").where(F.col("run_tag") == run_tag).collect():
     snaps[r["table_name"]][r["label"]] = (r["n_rows"], r["checksum"])
-check(bool(snaps), f"no snapshots for run {run_tag}")
-for table, by_label in sorted(snaps.items()):
-    check(len(by_label) == 3, f"{table}: expected 3 snapshots, got {sorted(by_label)}")
-    check(len(set(by_label.values())) == 1, f"{table}: changed across re-runs {by_label}")
+if require_snapshots:
+    check(bool(snaps), f"no snapshots for run {run_tag}")
+    for table, by_label in sorted(snaps.items()):
+        check(len(by_label) == 3, f"{table}: expected 3 snapshots, got {sorted(by_label)}")
+        check(len(set(by_label.values())) == 1, f"{table}: changed across re-runs {by_label}")
 
 # 2 and 3. accounting per file -------------------------------------------------
 bronze = Counter()
@@ -96,33 +102,40 @@ for f in files:
         check(got == exp, f"{f}: silver outcome {got} != expected {exp}")
     totals.update(bronze=bronze[f], silver=silver[f], unresolved=unresolved[f], deduped=deduped[f],
                   quarantine=sum(q.values()))
-missing = [f for f, v in truth["files"].items() if v["expected_bronze_rows"] and f not in bronze]
+missing = [f for f, v in truth["files"].items() if v["expected_bronze_rows"] and f in landed and f not in bronze]
 check(not missing, f"ground-truth files with no bronze rows: {missing[:5]}")
 
 # 4. unresolved identifiers ---------------------------------------------------
 got_ids = {(r["source_id"], r["identifier_type"], r["identifier"]): r["count"] for r in
            spark.table(T("unresolved_securities")).groupBy("source_id", "identifier_type", "identifier").count().collect()}
-exp_ids = {(p["source"], p["identifier_type"], p["identifier"]): p["affected_rows"]
-           for p in truth["planted"] if p["problem"] == "unmapped_security"}
-check(got_ids == exp_ids, f"unresolved identifiers {got_ids} != planted {exp_ids}")
+# expected: rows from files delivered so far (ground truth lists them per identifier for all files)
+exp_ids_all = {(e["source"], e["identifier_type"], e["identifier"]): e["rows"] for e in truth["expected_unresolved"]}
+if all(truth["files"][f]["expected_status"] != "loaded" or f in landed for f in truth["files"]):
+    check(got_ids == exp_ids_all, f"unresolved identifiers {got_ids} != expected {exp_ids_all}")
+else:  # partial delivery: identifiers must be a subset, with no more rows than the full period has
+    check(all(k in exp_ids_all and n <= exp_ids_all[k] for k, n in got_ids.items()),
+          f"unexpected unresolved identifiers {got_ids}")
 
 # 5. units error --------------------------------------------------------------
-(units,) = [p for p in truth["planted"] if p["problem"] == "units_error"]
+units_planted = {p["file"] for p in truth["planted"] if p["problem"] == "units_error" and p["file"] in landed}
 units_files = {f for f, c in quarantine.items() if c.get("units_scale_suspect")}
-check(units_files == {units["file"]}, f"units_scale_suspect found in {sorted(units_files)}, planted in {units['file']}")
+check(units_files == units_planted, f"units_scale_suspect found in {sorted(units_files)}, planted in {sorted(units_planted)}")
 
 # 6. header versions ------------------------------------------------------------
-(drift,) = [p for p in truth["planted"] if p["problem"] == "schema_drift"]
-drifted = set(drift["files"])
-for r in (spark.table(T("silver_positions")).where(F.col("source_id") == "linden")
-          .groupBy("source_file", "header_version").count().collect()):
-    want = 2 if rel(r[0]) in drifted else 1
-    check(r[1] == want, f"{rel(r[0])}: header_version {r[1]} on {r[2]} rows, expected {want}")
+for drift in [p for p in truth["planted"] if p["problem"] == "schema_drift"]:
+    drifted = set(drift["files"])
+    for r in (spark.table(T("silver_positions")).where(F.col("source_id") == drift["source"])
+              .groupBy("source_file", "header_version").count().collect()):
+        want = 2 if rel(r[0]) in drifted else 1
+        check(r[1] == want, f"{rel(r[0])}: header_version {r[1]} on {r[2]} rows, expected {want}")
 
 # 7. planted breaks keep custodian values ----------------------------------------
 pos = spark.table(T("silver_positions"))
 for p in truth["planted"]:
     if p["problem"] not in ("quantity_break", "value_break"):
+        continue
+    if not any(v["source"] == p["source"] and v["business_date"] == p["business_date"] and f in landed
+               for f, v in truth["files"].items()):
         continue
     hit = pos.where((F.col("source_id") == p["source"]) & (F.col("account_id") == p["account_id"]) &
                     (F.col("security_id") == p["security_id"]) &
@@ -168,7 +181,7 @@ summary = {"client": client_id, "run_tag": run_tag, "checked_at": datetime.now(t
            "snapshots": {t: v for t, v in sorted(snaps.items())},
            "n_failures": len(failures), "failures": failures[:50], "passed": not failures}
 print("VALIDATION_SUMMARY " + json.dumps(summary, default=str))
-spark.createDataFrame([(client_id, "slice2", summary["checked_at"], summary["passed"], json.dumps(summary, default=str))],
+spark.createDataFrame([(client_id, "silver", summary["checked_at"], summary["passed"], json.dumps(summary, default=str))],
                       "client_id string, check_name string, checked_at string, passed boolean, summary string") \
     .write.mode("append").saveAsTable(f"{QA_CATALOG}.{QA_SCHEMA}.validation_results")
 if failures:

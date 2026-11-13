@@ -5,7 +5,7 @@
       "displayName": "Tie-out rate by date",
       "queryLines": [
         "SELECT business_date, tie_out_rate * 100 AS tie_out_pct, matched, breaks, pending, explained_upstream ",
-        "FROM keelstone.calder_valley.gold_tieout_daily"
+        "FROM keelstone.__SCHEMA__.gold_tieout_daily"
       ]
     },
     {
@@ -13,30 +13,30 @@
       "displayName": "Tie-out rate, all dates",
       "queryLines": [
         "SELECT round(100 * sum(matched) / (sum(positions_compared) - sum(pending)), 2) AS tie_out_pct, ",
-        "sum(breaks) AS breaks, sum(pending) AS pending FROM keelstone.calder_valley.gold_tieout_daily"
+        "sum(breaks) AS breaks, sum(pending) AS pending FROM keelstone.__SCHEMA__.gold_tieout_daily"
       ]
     },
     {
       "name": "exposure_asset_class",
       "displayName": "Exposure by asset class, latest date",
       "queryLines": [
-        "SELECT asset_class, market_value_usd, weight FROM keelstone.calder_valley.gold_exposure_asset_class ",
-        "WHERE business_date = (SELECT max(business_date) FROM keelstone.calder_valley.gold_tieout_daily)"
+        "SELECT asset_class, market_value_usd, weight FROM keelstone.__SCHEMA__.gold_exposure_asset_class ",
+        "WHERE business_date = (SELECT max(business_date) FROM keelstone.__SCHEMA__.gold_tieout_daily)"
       ]
     },
     {
       "name": "exposure_currency",
       "displayName": "Exposure by currency, latest date",
       "queryLines": [
-        "SELECT currency, market_value_usd, market_value_local, weight FROM keelstone.calder_valley.gold_exposure_currency ",
-        "WHERE business_date = (SELECT max(business_date) FROM keelstone.calder_valley.gold_tieout_daily)"
+        "SELECT currency, market_value_usd, market_value_local, weight FROM keelstone.__SCHEMA__.gold_exposure_currency ",
+        "WHERE business_date = (SELECT max(business_date) FROM keelstone.__SCHEMA__.gold_tieout_daily)"
       ]
     },
     {
       "name": "breaks_by_reason",
       "displayName": "Non-matched positions by reason",
       "queryLines": [
-        "SELECT status, reason_code, count(*) AS positions FROM keelstone.calder_valley.gold_reconciliation ",
+        "SELECT status, reason_code, count(*) AS positions FROM keelstone.__SCHEMA__.gold_reconciliation ",
         "WHERE status <> 'matched' GROUP BY status, reason_code"
       ]
     },
@@ -46,7 +46,7 @@
       "queryLines": [
         "SELECT business_date, custodian, account_id, security_id, status, reason_code, ",
         "quantity_difference, value_difference FROM ",
-        "keelstone.calder_valley.gold_break_queue"
+        "keelstone.__SCHEMA__.gold_break_queue"
       ]
     }
   ],
@@ -60,8 +60,11 @@
             "name": "title",
             "multilineTextboxSpec": {
               "lines": [
-                "## Keelstone holdings onboarding: gold overview",
-                "Client: Calder Valley Teachers' Retirement System. **All data is synthetic; every company is fictional.** Tie-out rate = matched / (compared minus pending)."
+                "## Keelstone holdings onboarding: gold overview\n",
+                "\n",
+                "Client: __CLIENT_NAME__. **All data is synthetic; every company is fictional.**\n",
+                "\n",
+                "Tie-out rate = matched / (compared minus pending).\n"
               ]
             }
           },
@@ -228,7 +231,11 @@
                 "y": {
                   "fieldName": "tie_out_pct",
                   "scale": {
-                    "type": "quantitative"
+                    "type": "quantitative",
+                    "domain": {
+                      "min": 60,
+                      "max": 100
+                    }
                   },
                   "displayName": "Tie-out rate (%)"
                 }

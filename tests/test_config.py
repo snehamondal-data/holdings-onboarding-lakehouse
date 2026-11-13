@@ -5,7 +5,6 @@ import pytest
 import yaml
 
 from keelstone.config import ConfigError, load_client, parse_client, parse_source, plan_ingest
-from keelstone.generator import SUBDIR
 
 REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "config"
@@ -30,11 +29,13 @@ def test_plan_has_one_stream_per_listed_source_with_isolated_paths():
         assert p.reader_options["cloudFiles.schemaEvolutionMode"] == "rescue"
 
 
-def test_generator_landing_layout_matches_source_configs():
-    plans = {p.source.source_id: p for p in plan_ingest("calder_valley")}
-    assert set(plans) == set(SUBDIR)
-    for sid, subdir in SUBDIR.items():
-        assert plans[sid].source.landing_subdir == subdir
+def test_generator_landing_layout_matches_source_configs(any_client):
+    client_id, _, truth = any_client
+    plans = {p.source.source_id: p for p in plan_ingest(client_id)}
+    sources_with_files = {f["source"] for f in truth["files"].values()}
+    assert sources_with_files == set(plans)
+    for rel, f in truth["files"].items():
+        assert rel.startswith(plans[f["source"]].source.landing_subdir + "/"), rel
 
 
 def test_new_source_added_only_in_yaml_is_picked_up(tmp_path):

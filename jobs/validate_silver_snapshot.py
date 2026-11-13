@@ -25,13 +25,11 @@ client = dbutils.widgets.get("client")  # noqa: F821
 run_tag = dbutils.widgets.get("run_tag")  # noqa: F821
 label = dbutils.widgets.get("label")  # noqa: F821
 
-SILVER_TABLES = ["silver_positions", "silver_quarantine", "unresolved_securities", "silver_dedupe_log",
-                 "silver_identifier_map", "silver_key_conflicts", "silver_position_checks",
-                 "silver_security_master", "silver_prices", "silver_fx", "silver_trades",
-                 "gold_reconciliation", "gold_break_queue", "gold_positions", "gold_exposure_asset_class",
-                 "gold_exposure_currency", "gold_tieout_daily"]
-
 spark = SparkSession.builder.getOrCreate()
+# Every silver and gold table this client's pipeline owns (clients differ: not every client has trades).
+SILVER_TABLES = sorted(r["tableName"] for r in spark.sql(f"SHOW TABLES IN keelstone.{client}").collect()
+                       if r["tableName"].startswith(("silver_", "gold_")) or r["tableName"] == "unresolved_securities")
+
 taken = datetime.now(timezone.utc).isoformat()
 rows = []
 for t in SILVER_TABLES:

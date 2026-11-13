@@ -15,13 +15,15 @@ POSITION_SOURCES = ("harrow", "linden", "pemberton", "book_positions")
 
 
 def test_every_source_has_a_valid_silver_mapping():
-    for sid in load_client("calder_valley").sources:
-        s = load_source(sid).silver
-        assert s is not None, sid
-        if sid in POSITION_SOURCES:
-            assert s.is_positions and s.table == "silver_positions"
-        else:
-            assert not s.is_positions and s.key
+    for client in ("calder_valley", "wrexford"):
+        for sid in load_client(client).sources:
+            src = load_source(sid)
+            s = src.silver
+            assert s is not None, sid
+            if src.kind in ("custodian", "book_of_record") and sid != "book_trades":
+                assert s.is_positions and s.table == "silver_positions", sid
+            else:
+                assert not s.is_positions and s.key, sid
 
 
 def test_identifier_types_and_units_multipliers_come_from_config():
@@ -126,9 +128,9 @@ def test_header_rename_to_unknown_column_is_rejected():
                                            "renames": {"B": "nope"}}]})
 
 
-def test_local_silver_matches_ground_truth_for_every_file(generated):
+def test_local_silver_matches_ground_truth_for_every_file(any_client):
     """bronze rows = silver + quarantine + unresolved + deduped, and each part matches ground truth."""
-    out, truth = generated
+    client_id, out, truth = any_client
     master_src = load_source("security_master")
     master_file = next(k for k, v in truth["files"].items() if v["source"] == "security_master")
     master_rows = read_rows(master_src, (out / "landing" / master_file).read_text())
@@ -141,16 +143,15 @@ def test_local_silver_matches_ground_truth_for_every_file(generated):
             continue
         src = load_source(f["source"])
         rows = [r for r in read_rows(src, (out / "landing" / rel).read_text()) if quarantine_reason(src, r) is None]
-        got = silver_outcomes(src, rows, "calder_valley", ids, rel)
+        got = silver_outcomes(src, rows, client_id, ids, rel)
         assert got == exp, rel
         assert len(rows) == got["rows"] + got["unresolved"] + got["deduped"] + sum(got["quarantine"].values())
         totals.update({k: v for k, v in got.items() if k != "quarantine"})
         totals.update(got["quarantine"])
     assert totals["deduped"] == sum(1 for p in truth["planted"] if p["problem"] == "duplicate_row")
-    unmapped = sum(p["affected_rows"] for p in truth["planted"] if p["problem"] == "unmapped_security")
-    assert totals["unresolved"] == unmapped
-    (units,) = [p for p in truth["planted"] if p["problem"] == "units_error"]
-    assert totals[M.UNITS_REASON] == truth["files"][units["file"]]["expected_silver"]["quarantine"][M.UNITS_REASON]
+    assert totals["unresolved"] == sum(e["rows"] for e in truth["expected_unresolved"])
+    for units in [p for p in truth["planted"] if p["problem"] == "units_error"]:
+        assert totals[M.UNITS_REASON] == truth["files"][units["file"]]["expected_silver"]["quarantine"][M.UNITS_REASON]
 
 
 def test_planted_breaks_survive_mapping_with_custodian_values(generated):
@@ -170,3 +171,34 @@ def test_planted_breaks_survive_mapping_with_custodian_values(generated):
             assert any(r["quantity"] == p["custodian_quantity"] for r in hits), p["id"]
         else:
             assert any(abs(float(r["market_value"]) - p["custodian_market_value"]) <= 1.0 for r in hits), p["id"]
+
+
+def test_comma_decimals_and_thousands_separators_are_read_correctly():
+    src = load_source("holloway")
+    assert (src.decimal_separator, src.thousands_separator) == (",", ".")
+    text = ("Depot;Stichtag;ISIN;Bezeichnung;Stueck;Kurs;Kurswert;Waehrung\n"
+            "CV-HC-001;01.07.2026;gbe6ohtnanm0;Vale Systems;38.700;98,2468;3.802.151,16;GBP\n"
+            "CV-HC-001;01.07.2026;GBE6OHTNANM0;Vale Systems;38.7OO;98,2468;3.802.151,16;GBP\n")
+    good, bad = read_rows(src, text)
+    assert quarantine_reason(src, good) is None
+    assert quarantine_reason(src, bad) == "not_numeric:Stueck"
+    pos = map_position(src, good, "c", "f")
+    assert pos["quantity"] == Decimal("38700") and pos["price"] == Decimal("98.2468")
+    assert pos["market_value"] == Decimal("3802151.16") and pos["business_date"] == date(2026, 7, 1)
+    sql = dict(M.position_select(src, "c"))["quantity"]
+    assert "replace(replace(`Stueck`, '.', ''), ',', '.')" in sql
+
+
+def test_separator_config_is_validated():
+    base = {"source_id": "x", "kind": "custodian", "format": "csv", "landing_subdir": "x",
+            "bronze_table": "bronze_x", "columns": ["a"]}
+    with pytest.raises(ConfigError, match="delimiter cannot"):
+        parse_source({**base, "options": {"delimiter": ",", "decimal_separator": ","}})
+    with pytest.raises(ConfigError, match="decimal_separator"):
+        parse_source({**base, "options": {"delimiter": ";", "decimal_separator": ",", "thousands_separator": ","}})
+
+
+def test_any_day_month_year_order_is_accepted():
+    from keelstone.config import date_format_ok
+    assert all(map(date_format_ok, ["dd.MM.yyyy", "yyyyMMdd", "MM/dd/yyyy", "yyyy-MM-dd"]))
+    assert not any(map(date_format_ok, ["dd-MMM-yy", "yyyy-MM/dd", "dd.dd.yyyy", "yyyy-MM"]))

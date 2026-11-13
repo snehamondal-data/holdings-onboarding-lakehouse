@@ -42,9 +42,9 @@ def test_tie_out_rate_excludes_pending():
     assert tie_out_rate(0, 5, 5) is None
 
 
-def test_expected_recon_agrees_with_the_plant_list(generated):
+def test_expected_recon_agrees_with_the_plant_list(any_client):
     """The comparison-derived expectation must contain exactly the planted recon problems."""
-    _, truth = generated
+    _, _, truth = any_client
     nm = {(x["custodian"], x["business_date"], x["account_id"], x["security_id"]): x["reason"]
           for x in truth["expected_recon"]["non_matched"]}
     planted_breaks = {}
@@ -58,16 +58,19 @@ def test_expected_recon_agrees_with_the_plant_list(generated):
             assert nm[key] == "custodian_row_rejected", p["id"]
     breaks = {k: v for k, v in nm.items() if v in BREAK_REASONS}
     assert breaks == planted_breaks
-    unmapped = {(p["source"], p["security_id"]) for p in truth["planted"] if p["problem"] == "unmapped_security"}
-    assert {(k[0], k[3]) for k, v in nm.items() if v == "custodian_identifier_unresolved"} == unmapped
-    (units,) = [p for p in truth["planted"] if p["problem"] == "units_error"]
-    q = {k for k, v in nm.items() if v == "custodian_row_quarantined"}
-    assert {(k[0], k[1]) for k in q} == {("linden", units["business_date"])}
-    assert truth["expected_recon"]["late_file"]["pending_book_positions"] > 0
+    unresolved = {(e["source"], e["security_id"]) for e in truth["expected_unresolved"]}
+    assert {(k[0], k[3]) for k, v in nm.items() if v == "custodian_identifier_unresolved"} == unresolved
+    q = {(k[0], k[1]) for k, v in nm.items() if v == "custodian_row_quarantined"}
+    assert q == {(p["source"], p["business_date"]) for p in truth["planted"] if p["problem"] == "units_error"}
+    late = truth["expected_recon"]["late_files"]
+    assert late and all(lf["pending_book_positions"] > 0 for lf in late)
 
 
-def _local_recon(out, truth):
+def _local_recon(client_id, out, truth):
     """Plain-Python reconciliation over the generated files, with the gold rules and YAML tolerances."""
+    tol = load_client(client_id).reconciliation
+    position_sources = {s for s in load_client(client_id).sources
+                        if load_source(s).silver and load_source(s).silver.is_positions}
     files = truth["files"]
     master_rel = next(k for k, v in files.items() if v["source"] == "security_master")
     ids = identifier_map(read_rows(load_source("security_master"), (out / "landing" / master_rel).read_text()))
@@ -78,7 +81,7 @@ def _local_recon(out, truth):
                 prices[(r["price_date"], r["security_id"])] = float(r["close_price"])
     book, cust, upstream, loose = {}, {}, {}, Counter()
     for rel, f in files.items():
-        if f["source"] not in ("harrow", "linden", "pemberton", "book_positions") or f["expected_status"] != "loaded":
+        if f["source"] not in position_sources or f["expected_status"] != "loaded":
             continue
         src = load_source(f["source"])
         for row in read_rows(src, (out / "landing" / rel).read_text()):
@@ -116,7 +119,7 @@ def _local_recon(out, truth):
         else:
             pos = cust[k][1]
             bv = round(book[k] * prices[(d, sid)], 2)
-            reason = compare(book[k], float(pos["quantity"]), bv, float(pos["market_value"]), TOL)
+            reason = compare(book[k], float(pos["quantity"]), bv, float(pos["market_value"]), tol)
         result[(c, d, acct, sid)] = reason
     for level in ("account", "date"):           # same order as gold's count-based attribution
         for k in sorted(k for k, v in result.items() if v == "missing_at_custodian"):
@@ -128,9 +131,9 @@ def _local_recon(out, truth):
     return result
 
 
-def test_local_reconciliation_matches_ground_truth(generated):
-    out, truth = generated
-    got = _local_recon(out, truth)
+def test_local_reconciliation_matches_ground_truth(any_client):
+    client_id, out, truth = any_client
+    got = _local_recon(client_id, out, truth)
     want = {(x["custodian"], x["business_date"], x["account_id"], x["security_id"]): x["reason"]
             for x in truth["expected_recon"]["non_matched"]}
     assert {k: v for k, v in got.items() if v} == want

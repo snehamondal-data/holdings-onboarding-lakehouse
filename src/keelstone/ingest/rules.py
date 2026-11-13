@@ -29,6 +29,25 @@ class Rule:
     date_format: str | None = None
 
 
+def number_sql(src: SourceConfig, expr: str) -> str:
+    """Rewrite a number written with the source's separators into Spark's form (1.234,5 -> 1234.5)."""
+    if src.thousands_separator:
+        expr = f"replace({expr}, '{src.thousands_separator}', '')"
+    if src.decimal_separator != ".":
+        expr = f"replace({expr}, '{src.decimal_separator}', '.')"
+    return expr
+
+
+def normalize_number(src: SourceConfig, v):
+    if not isinstance(v, str):
+        return v
+    if src.thousands_separator:
+        v = v.replace(src.thousands_separator, "")
+    if src.decimal_separator != ".":
+        v = v.replace(src.decimal_separator, ".")
+    return v
+
+
 def _is_array(src: SourceConfig, col: str) -> bool:
     return src.column_types.get(col, "string").lower().startswith("array")
 
@@ -59,8 +78,9 @@ def _sql_condition(src: SourceConfig, r: Rule) -> str:
     if r.kind == "numeric":
         if r.nested_field:
             f = f"x.`{r.nested_field}`"
-            return f"coalesce(exists({c}, x -> {f} IS NOT NULL AND try_cast({f} AS DOUBLE) IS NULL), false)"
-        return f"({c} IS NOT NULL AND trim({c}) <> '' AND try_cast({c} AS DOUBLE) IS NULL)"
+            return (f"coalesce(exists({c}, x -> {f} IS NOT NULL AND "
+                    f"try_cast({number_sql(src, f)} AS DOUBLE) IS NULL), false)")
+        return f"({c} IS NOT NULL AND trim({c}) <> '' AND try_cast({number_sql(src, c)} AS DOUBLE) IS NULL)"
     if r.kind == "date":
         return (f"({c} IS NOT NULL AND trim({c}) <> '' "
                 f"AND try_to_timestamp({c}, '{r.date_format}') IS NULL)")
@@ -114,9 +134,9 @@ def quarantine_reason(src: SourceConfig, row: dict) -> str | None:
             if r.nested_field:
                 for item in v or []:
                     x = (item or {}).get(r.nested_field)
-                    if x is not None and not _is_number(x):
+                    if x is not None and not _is_number(normalize_number(src, x)):
                         return r.reason
-            elif not _blank(v) and not _is_number(v):
+            elif not _blank(v) and not _is_number(normalize_number(src, v)):
                 return r.reason
         elif r.kind == "date":
             v = row.get(r.column)

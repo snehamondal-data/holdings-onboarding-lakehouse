@@ -16,7 +16,13 @@ DEFAULT_CONFIG_DIR = REPO_ROOT / "config"
 
 SUPPORTED_FORMATS = {"csv", "json"}
 SUPPORTED_KINDS = {"custodian", "book_of_record", "reference"}
-SUPPORTED_DATE_FORMATS = {"yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "yyyyMMdd"}
+# Any day/month/year order with one consistent separator (or none), e.g. dd.MM.yyyy, yyyyMMdd.
+_DATE_FORMAT = re.compile(r"^(yyyy|MM|dd)([-./]?)(yyyy|MM|dd)\2(yyyy|MM|dd)$")
+
+
+def date_format_ok(fmt: str) -> bool:
+    m = _DATE_FORMAT.match(fmt)
+    return bool(m) and sorted((m.group(1), m.group(3), m.group(4))) == ["MM", "dd", "yyyy"]
 # Schemas that ingest must never touch (ground truth lives there).
 RESERVED_SCHEMAS = {"qa"}
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -78,6 +84,8 @@ class SourceConfig:
     dates: dict = field(default_factory=dict)
     header_versions: tuple = ()
     silver: SilverConfig | None = None
+    decimal_separator: str = "."
+    thousands_separator: str = ""
 
     def header_version_for(self, rescued_keys) -> int | None:
         """Highest declared header version whose renamed headers all appear in the row."""
@@ -201,8 +209,8 @@ def parse_source(d: dict, where: str = "source") -> SourceConfig:
     for c, f in dates.items():
         if c not in known:
             raise ConfigError(f"{where}: date column '{c}' is not in columns")
-        if f not in SUPPORTED_DATE_FORMATS:
-            raise ConfigError(f"{where}: date format '{f}' not in {sorted(SUPPORTED_DATE_FORMATS)}")
+        if not date_format_ok(f):
+            raise ConfigError(f"{where}: date format '{f}' must order yyyy, MM and dd with one separator")
     aliases = {k: list(v) for k, v in (d.get("column_aliases") or {}).items()}
     header_versions = _parse_header_versions(d.get("header_versions") or [], known, where)
     for hv in header_versions:
@@ -222,6 +230,12 @@ def parse_source(d: dict, where: str = "source") -> SourceConfig:
     options = dict(d.get("options") or {})
     if fmt == "csv" and "delimiter" not in options:
         raise ConfigError(f"{where}: csv sources need options.delimiter")
+    dec = options.get("decimal_separator", ".")
+    thou = options.get("thousands_separator", "")
+    if dec not in (".", ",") or thou not in ("", ".", ",", " ", "'") or dec == thou:
+        raise ConfigError(f"{where}: decimal_separator must be '.' or ',' and differ from thousands_separator")
+    if fmt == "csv" and options["delimiter"] in (dec, thou):
+        raise ConfigError(f"{where}: the delimiter cannot also be a decimal or thousands separator")
 
     return SourceConfig(
         source_id=sid,
@@ -240,6 +254,8 @@ def parse_source(d: dict, where: str = "source") -> SourceConfig:
         dates=dates,
         header_versions=header_versions,
         silver=_parse_silver(d.get("silver"), known, column_types, dates, where),
+        decimal_separator=dec,
+        thousands_separator=thou,
     )
 
 

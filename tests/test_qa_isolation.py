@@ -57,7 +57,9 @@ def test_pipeline_plans_point_only_at_the_client_schema():
 
 
 def test_only_validation_tasks_get_qa_inputs_in_the_bundle():
-    for job_file in (REPO / "resources").glob("*.yml"):
+    job_files = sorted((REPO / "resources").rglob("*.yml"))
+    assert any("clients" in str(f) for f in job_files)
+    for job_file in job_files:
         jobs = yaml.safe_load(job_file.read_text())["resources"].get("jobs", {})
         for job in jobs.values():
             for task in job["tasks"]:
@@ -69,8 +71,10 @@ def test_only_validation_tasks_get_qa_inputs_in_the_bundle():
 
 
 def test_silver_pipeline_config_does_not_point_at_qa():
-    for f in (REPO / "resources").glob("*.pipeline.yml"):
-        for pipe in yaml.safe_load(f.read_text())["resources"]["pipelines"].values():
+    pipes = [pipe for f in (REPO / "resources").rglob("*.yml")
+             for pipe in (yaml.safe_load(f.read_text())["resources"].get("pipelines") or {}).values()]
+    assert len(pipes) >= 2
+    for pipe in pipes:
             assert pipe["schema"] != "qa"
             assert not any("qa" in str(v).split(".") or "/qa/" in str(v)
                            for v in (pipe.get("configuration") or {}).values())

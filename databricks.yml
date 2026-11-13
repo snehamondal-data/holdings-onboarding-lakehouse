@@ -4,6 +4,7 @@ bundle:
 
 include:
   - resources/*.yml
+  - resources/clients/*.yml
 
 variables:
   client:
@@ -27,6 +28,15 @@ targets:
     workspace:
       # Host comes from the CLI profile (~/.databrickscfg), so no workspace URL is committed.
       profile: keelstone
+
+  demo:
+    # The same resources without the "[dev <user>]" name prefix, for screenshots and demos.
+    # Deploy it instead of dev, not beside it: a table can be managed by only one pipeline,
+    # so two targets must not both run pipelines for the same client schemas.
+    # No mode: development mode would add the prefix (an empty name_prefix is ignored there).
+    workspace:
+      profile: keelstone
+      root_path: ~/.bundle/${bundle.name}/demo
 
 sync:
   exclude:

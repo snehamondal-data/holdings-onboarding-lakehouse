@@ -12,6 +12,7 @@ Natural key: client_id, source_id, account_id, security_id, business_date
 from __future__ import annotations
 
 from keelstone.config import SourceConfig
+from keelstone.ingest.rules import number_sql
 
 POSITION_KEY = ("client_id", "source_id", "account_id", "security_id", "business_date")
 UNRESOLVED_KEY = ("client_id", "source_id", "account_id", "business_date", "identifier_type", "identifier")
@@ -34,13 +35,15 @@ def _lit(v: str) -> str:
     return "'" + str(v).replace("'", "\\'") + "'"
 
 
-def column_ref(ref: str) -> str:
-    """A bronze column, or the sum of a field over a nested array ("lots[].quantity")."""
+def column_ref(ref: str, src: SourceConfig | None = None) -> str:
+    """A bronze column, or the sum of a field over a nested array ("lots[].quantity").
+    With src, numbers are first rewritten from the source's decimal/thousands separators."""
+    num = (lambda e: number_sql(src, e)) if src is not None else (lambda e: e)  # noqa: E731
     if "[]." in ref:
         arr, fld = ref.split("[].", 1)
         return (f"aggregate({q(arr)}, CAST(0 AS DOUBLE), "
-                f"(acc, x) -> acc + coalesce(CAST(x.{q(fld)} AS DOUBLE), 0D))")
-    return q(ref)
+                f"(acc, x) -> acc + coalesce(CAST({num('x.' + q(fld))} AS DOUBLE), 0D))")
+    return num(q(ref))
 
 
 def date_expr(src: SourceConfig, column: str) -> str:
@@ -76,9 +79,9 @@ def position_select(src: SourceConfig, client_id: str) -> list[tuple[str, str]]:
     s = src.silver
     f = s.fields
     mult = s.market_value_multiplier
-    mv = (f"CAST(CAST({column_ref(f['market_value'])} AS DOUBLE) * {mult!r} AS {VALUE_TYPE})"
+    mv = (f"CAST(CAST({column_ref(f['market_value'], src)} AS DOUBLE) * {mult!r} AS {VALUE_TYPE})"
           if "market_value" in f else f"CAST(NULL AS {VALUE_TYPE})")
-    price = (f"CAST({column_ref(f['price'])} AS {PRICE_TYPE})" if "price" in f
+    price = (f"CAST({column_ref(f['price'], src)} AS {PRICE_TYPE})" if "price" in f
              else f"CAST(NULL AS {PRICE_TYPE})")
     return [
         ("client_id", _lit(client_id)),
@@ -86,7 +89,7 @@ def position_select(src: SourceConfig, client_id: str) -> list[tuple[str, str]]:
         ("position_side", _lit(s.position_side)),
         ("account_id", f"trim({q(f['account_id'])})"),
         ("business_date", date_expr(src, f["business_date"])),
-        ("quantity", f"CAST({column_ref(f['quantity'])} AS {QTY_TYPE})"),
+        ("quantity", f"CAST({column_ref(f['quantity'], src)} AS {QTY_TYPE})"),
         ("price", price),
         ("market_value", mv),
         ("currency", f"upper(trim({q(f['currency'])}))"),
@@ -107,7 +110,7 @@ def reference_select(src: SourceConfig, client_id: str) -> list[tuple[str, str]]
         elif typ == "string":
             out.append((col, f"nullif(trim({q(col)}), '')"))
         else:
-            out.append((col, f"CAST({q(col)} AS {typ.upper()})"))
+            out.append((col, f"CAST({number_sql(src, q(col))} AS {typ.upper()})"))
     out += [("source_file", "`_source_file`"), ("row_hash", row_hash_expr(src)), ("load_ts", "`_load_ts`")]
     return out
 

@@ -1,0 +1,33 @@
+source_id: holloway
+display_name: Holloway Custody (fictional custodian)
+kind: custodian
+format: csv
+landing_subdir: holloway
+file_glob: "*.csv"
+options:
+  delimiter: ";"
+  header: true
+  decimal_separator: ","        # 98,2468
+  thousands_separator: "."      # 3.802.151,16
+bronze_table: bronze_holloway
+columns: [Depot, Stichtag, ISIN, Bezeichnung, Stueck, Kurs, Kurswert, Waehrung]
+rules:
+  required: [Depot, Stichtag, ISIN, Stueck]
+  numeric: [Stueck, Kurs, Kurswert]
+  dates:
+    Stichtag: "dd.MM.yyyy"
+silver:
+  target: positions
+  position_side: custodian
+  fields:
+    account_id: Depot
+    business_date: Stichtag
+    quantity: Stueck
+    price: Kurs
+    market_value: Kurswert
+    currency: Waehrung
+  identifier:
+    type: isin
+    columns: [ISIN]
+  market_value_multiplier: 1
+  dedupe: exact

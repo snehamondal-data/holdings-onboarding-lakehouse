@@ -1,0 +1,31 @@
+source_id: quayside
+display_name: Quayside Trust Company (fictional custodian)
+kind: custodian
+format: csv
+landing_subdir: quayside
+file_glob: "*.tsv"
+options:
+  delimiter: "\t"
+  header: true
+bronze_table: bronze_quayside
+columns: [portfolio, as_at, cusip, description, shares, px, mv_000, ccy]
+rules:
+  required: [portfolio, as_at, cusip, shares]
+  numeric: [shares, px, mv_000]
+  dates:
+    as_at: "MM/dd/yyyy"
+silver:
+  target: positions
+  position_side: custodian
+  fields:
+    account_id: portfolio
+    business_date: as_at
+    quantity: shares
+    price: px
+    market_value: mv_000
+    currency: ccy
+  identifier:
+    type: cusip
+    columns: [cusip]
+  market_value_multiplier: 1000  # Quayside reports market value in thousands
+  dedupe: exact

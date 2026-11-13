@@ -1,0 +1,530 @@
+{
+  "datasets": [
+    {
+      "name": "tieout_daily",
+      "displayName": "Tie-out rate by date",
+      "queryLines": [
+        "SELECT business_date, tie_out_rate * 100 AS tie_out_pct, matched, breaks, pending, explained_upstream ",
+        "FROM keelstone.wrexford.gold_tieout_daily"
+      ]
+    },
+    {
+      "name": "tieout_overall",
+      "displayName": "Tie-out rate, all dates",
+      "queryLines": [
+        "SELECT round(100 * sum(matched) / (sum(positions_compared) - sum(pending)), 2) AS tie_out_pct, ",
+        "sum(breaks) AS breaks, sum(pending) AS pending FROM keelstone.wrexford.gold_tieout_daily"
+      ]
+    },
+    {
+      "name": "exposure_asset_class",
+      "displayName": "Exposure by asset class, latest date",
+      "queryLines": [
+        "SELECT asset_class, market_value_usd, weight FROM keelstone.wrexford.gold_exposure_asset_class ",
+        "WHERE business_date = (SELECT max(business_date) FROM keelstone.wrexford.gold_tieout_daily)"
+      ]
+    },
+    {
+      "name": "exposure_currency",
+      "displayName": "Exposure by currency, latest date",
+      "queryLines": [
+        "SELECT currency, market_value_usd, market_value_local, weight FROM keelstone.wrexford.gold_exposure_currency ",
+        "WHERE business_date = (SELECT max(business_date) FROM keelstone.wrexford.gold_tieout_daily)"
+      ]
+    },
+    {
+      "name": "breaks_by_reason",
+      "displayName": "Non-matched positions by reason",
+      "queryLines": [
+        "SELECT status, reason_code, count(*) AS positions FROM keelstone.wrexford.gold_reconciliation ",
+        "WHERE status <> 'matched' GROUP BY status, reason_code"
+      ]
+    },
+    {
+      "name": "break_queue",
+      "displayName": "Break queue",
+      "queryLines": [
+        "SELECT business_date, custodian, account_id, security_id, status, reason_code, ",
+        "quantity_difference, value_difference FROM ",
+        "keelstone.wrexford.gold_break_queue"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Keelstone holdings onboarding: gold overview\n",
+                "\n",
+                "Client: Wrexford County Firefighters' Pension Fund (fictional). **All data is synthetic; every company is fictional.**\n",
+                "\n",
+                "Tie-out rate = matched / (compared minus pending).\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "tieout_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tieout_overall",
+                  "fields": [
+                    {
+                      "name": "tie_out_pct",
+                      "expression": "`tie_out_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "tie_out_pct",
+                  "displayName": "Tie-out rate (%)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Tie-out rate, all dates (%)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "breaks_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tieout_overall",
+                  "fields": [
+                    {
+                      "name": "breaks",
+                      "expression": "`breaks`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "breaks",
+                  "displayName": "Breaks"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Open breaks"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "pending_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tieout_overall",
+                  "fields": [
+                    {
+                      "name": "pending",
+                      "expression": "`pending`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "pending",
+                  "displayName": "Pending"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Pending (late files)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "tieout_line",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tieout_daily",
+                  "fields": [
+                    {
+                      "name": "business_date",
+                      "expression": "`business_date`"
+                    },
+                    {
+                      "name": "tie_out_pct",
+                      "expression": "`tie_out_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "business_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Business date"
+                },
+                "y": {
+                  "fieldName": "tie_out_pct",
+                  "scale": {
+                    "type": "quantitative",
+                    "domain": {
+                      "min": 60,
+                      "max": 100
+                    }
+                  },
+                  "displayName": "Tie-out rate (%)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Tie-out rate over time"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "exposure_ac",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "exposure_asset_class",
+                  "fields": [
+                    {
+                      "name": "asset_class",
+                      "expression": "`asset_class`"
+                    },
+                    {
+                      "name": "sum(market_value_usd)",
+                      "expression": "SUM(`market_value_usd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "asset_class",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Asset class"
+                },
+                "y": {
+                  "fieldName": "sum(market_value_usd)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Market value (USD)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Exposure by asset class (USD, latest date)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "exposure_ccy",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "exposure_currency",
+                  "fields": [
+                    {
+                      "name": "currency",
+                      "expression": "`currency`"
+                    },
+                    {
+                      "name": "sum(market_value_usd)",
+                      "expression": "SUM(`market_value_usd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "currency",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Currency"
+                },
+                "y": {
+                  "fieldName": "sum(market_value_usd)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Market value (USD)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Exposure by currency (USD, latest date)"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 11,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "breaks_reason",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "breaks_by_reason",
+                  "fields": [
+                    {
+                      "name": "reason_code",
+                      "expression": "`reason_code`"
+                    },
+                    {
+                      "name": "sum(positions)",
+                      "expression": "SUM(`positions`)"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "reason_code",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Reason"
+                },
+                "y": {
+                  "fieldName": "sum(positions)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Positions"
+                },
+                "color": {
+                  "fieldName": "status",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Status"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Non-matched positions by reason (breaks, pending, explained upstream)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "queue_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "break_queue",
+                  "fields": [
+                    {
+                      "name": "business_date",
+                      "expression": "`business_date`"
+                    },
+                    {
+                      "name": "custodian",
+                      "expression": "`custodian`"
+                    },
+                    {
+                      "name": "account_id",
+                      "expression": "`account_id`"
+                    },
+                    {
+                      "name": "security_id",
+                      "expression": "`security_id`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "reason_code",
+                      "expression": "`reason_code`"
+                    },
+                    {
+                      "name": "quantity_difference",
+                      "expression": "`quantity_difference`"
+                    },
+                    {
+                      "name": "value_difference",
+                      "expression": "`value_difference`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "business_date",
+                    "displayName": "Business date"
+                  },
+                  {
+                    "fieldName": "custodian",
+                    "displayName": "Custodian"
+                  },
+                  {
+                    "fieldName": "account_id",
+                    "displayName": "Account id"
+                  },
+                  {
+                    "fieldName": "security_id",
+                    "displayName": "Security id"
+                  },
+                  {
+                    "fieldName": "status",
+                    "displayName": "Status"
+                  },
+                  {
+                    "fieldName": "reason_code",
+                    "displayName": "Reason code"
+                  },
+                  {
+                    "fieldName": "quantity_difference",
+                    "displayName": "Quantity difference"
+                  },
+                  {
+                    "fieldName": "value_difference",
+                    "displayName": "Value difference"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Break queue (breaks and pending)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 6,
+            "height": 7
+          }
+        }
+      ]
+    }
+  ]
+}

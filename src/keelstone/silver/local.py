@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 from keelstone.config import SourceConfig
-from keelstone.ingest.rules import _py_date_format
+from keelstone.ingest.rules import _py_date_format, normalize_number
 from keelstone.silver.mapping import UNITS_RATIO_BANDS, UNITS_REASON
 
 AMBIGUOUS = object()
@@ -22,11 +22,11 @@ def _num(v) -> float | None:
     return float(v)
 
 
-def _ref(row: dict, ref: str):
+def _ref(row: dict, ref: str, src: SourceConfig):
     if "[]." in ref:
         arr, fld = ref.split("[].", 1)
-        return sum(_num(x.get(fld)) or 0.0 for x in (row.get(arr) or []))
-    return row.get(ref)
+        return sum(_num(normalize_number(src, x.get(fld))) or 0.0 for x in (row.get(arr) or []))
+    return normalize_number(src, row.get(ref))
 
 
 def _date(src: SourceConfig, col: str, v: str):
@@ -45,13 +45,13 @@ def identifier(src: SourceConfig, row: dict) -> str:
 
 def map_position(src: SourceConfig, row: dict, client_id: str, source_file: str = "") -> dict:
     s, f = src.silver, src.silver.fields
-    mv = _num(_ref(row, f["market_value"])) if "market_value" in f else None
-    price = _num(_ref(row, f["price"])) if "price" in f else None
+    mv = _num(_ref(row, f["market_value"], src)) if "market_value" in f else None
+    price = _num(_ref(row, f["price"], src)) if "price" in f else None
     return {
         "client_id": client_id, "source_id": src.source_id, "position_side": s.position_side,
         "account_id": row[f["account_id"]].strip(),
         "business_date": _date(src, f["business_date"], row[f["business_date"]]),
-        "quantity": Decimal(str(_num(_ref(row, f["quantity"])))).quantize(Decimal("0.000001")),
+        "quantity": Decimal(str(_num(_ref(row, f["quantity"], src)))).quantize(Decimal("0.000001")),
         "price": None if price is None else Decimal(str(price)).quantize(Decimal("0.000001")),
         "market_value": None if mv is None else Decimal(str(mv * s.market_value_multiplier)).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP),

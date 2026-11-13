@@ -5,9 +5,10 @@ Already-delivered files are tracked in <data>/delivery_state.json and never re-s
 so playing the days out in steps behaves like real daily arrivals (the late file and
 the re-sent duplicate arrive a day after their business date).
 
-  python scripts/deliver.py --through 2026-07-15
-  python scripts/deliver.py --all
-  python scripts/deliver.py --ground-truth        # copy ground truth to keelstone.qa only
+  python scripts/deliver.py --client calder_valley --through 2026-07-15
+  python scripts/deliver.py --client wrexford --all
+  python scripts/deliver.py --client wrexford --ground-truth     # ground truth to keelstone.qa only
+  python scripts/deliver.py --client calder_valley --redeliver 2026-08-20   # send a day again
 """
 import argparse
 import json
@@ -29,20 +30,32 @@ def cli(*args: str) -> None:
     subprocess.run([CLI, *args], check=True)
 
 
+def ensure_landing(client, profile: str) -> None:
+    """Create the client's schema and landing volume if they do not exist yet (idempotent)."""
+    for args in (["schemas", "create", client.schema, client.catalog],
+                 ["volumes", "create", client.catalog, client.schema, client.landing_volume, "MANAGED"]):
+        r = subprocess.run([CLI, *args, "--profile", profile], capture_output=True, text=True)
+        if r.returncode != 0 and "already exists" not in (r.stderr + r.stdout):
+            raise SystemExit(r.stderr or r.stdout)
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--through", help="deliver files with delivery_date <= this date (YYYY-MM-DD)")
     g.add_argument("--all", action="store_true")
     g.add_argument("--ground-truth", action="store_true", help="upload ground truth to the QA volume")
+    g.add_argument("--redeliver", help="send every file of this business date again (same names, overwritten)")
     p.add_argument("--client", default="calder_valley")
-    p.add_argument("--data", default=str(ROOT / "data"))
+    p.add_argument("--data", default=None, help="default: data/<client>")
     p.add_argument("--profile", default="keelstone")
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
 
-    data = Path(a.data)
+    data = Path(a.data) if a.data else ROOT / "data" / a.client
     client = load_client(a.client)
+    if not a.dry_run:
+        ensure_landing(client, a.profile)
     if a.ground_truth:
         gt = data / "ground_truth" / "ground_truth.json"
         target = ground_truth_path(a.client)
@@ -58,8 +71,11 @@ def main() -> None:
     if state.get("manifest_seed") not in (None, manifest["params"]["seed"]):
         raise SystemExit("delivery_state.json is from a different dataset; delete it first")
     done = set(state["delivered"])
-    due = [f for f in manifest["files"]
-           if f["path"] not in done and (a.all or f["delivery_date"] <= a.through)]
+    if a.redeliver:
+        due = [f for f in manifest["files"] if f["business_date"] == a.redeliver and f["path"] in done]
+    else:
+        due = [f for f in manifest["files"]
+               if f["path"] not in done and (a.all or f["delivery_date"] <= a.through)]
     if not due:
         print("nothing new to deliver")
         return
@@ -74,7 +90,8 @@ def main() -> None:
         print("  ", f["path"], "(delivered", f["delivery_date"] + ")")
     if a.dry_run:
         return
-    cli("fs", "cp", "-r", str(staging), "dbfs:" + client.landing_root, "--profile", a.profile)
+    cli("fs", "cp", "-r", str(staging), "dbfs:" + client.landing_root, "--profile", a.profile,
+        *(["--overwrite"] if a.redeliver else []))
     state = {"manifest_seed": manifest["params"]["seed"],
              "delivered": sorted(done | {f["path"] for f in due})}
     state_path.write_text(json.dumps(state, indent=1))

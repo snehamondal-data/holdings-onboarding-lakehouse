@@ -46,11 +46,11 @@ def main() -> None:
         if t["name"].startswith("bronze_"):
             print("drop table", t["full_name"])
             cli("tables", "delete", t["full_name"], profile=a.profile)
-    state = ROOT / "data" / "delivery_state.json"
+    state = ROOT / "data" / c.client_id / "delivery_state.json"
     if state.exists():
         state.unlink()
         print("removed", state)
-    print("reset done; next: deliver, then run slice3_gold with first_update=full_refresh")
+    print("reset done; next: deliver files; the client job's next pipeline update should be a full refresh")
 
 
 if __name__ == "__main__":

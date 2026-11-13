@@ -15,6 +15,7 @@ sources:
   - security_master
   - prices
   - fx
+  - holloway                     # Holloway Custody, onboarded in slice 4 by config only
 reconciliation:
   # Book of record vs custodians, per account, security and business date.
   quantity_tolerance: 0          # units; any difference is a quantity_break

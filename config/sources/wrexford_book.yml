@@ -1,0 +1,29 @@
+source_id: wrexford_book
+display_name: Wrexford book of record, daily positions
+kind: book_of_record
+format: csv
+landing_subdir: book_of_record
+file_glob: "*.txt"
+options:
+  delimiter: "|"
+  header: true
+bronze_table: bronze_wrexford_book
+columns: [valuation_date, portfolio, custodian_code, ks_security_id, units, ccy]
+rules:
+  required: [valuation_date, portfolio, ks_security_id, units]
+  numeric: [units]
+  dates:
+    valuation_date: "yyyy-MM-dd"
+silver:
+  target: positions
+  position_side: book
+  fields:
+    account_id: portfolio
+    business_date: valuation_date
+    quantity: units
+    currency: ccy
+  identifier:
+    type: security_id
+    columns: [ks_security_id]
+  market_value_multiplier: 1
+  dedupe: exact

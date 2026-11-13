@@ -5,7 +5,6 @@ from pathlib import Path
 
 from keelstone.config import load_source
 from keelstone.generator import generate
-from keelstone.generator.plants import IDENTIFIER_FIELD
 from keelstone.generator.universe import cusip_check_digit, isin_check_digit
 from keelstone.ingest.local_reader import read_rows
 from keelstone.ingest.rules import quarantine_reason
@@ -99,20 +98,25 @@ def test_linden_drift_starts_mid_period_and_units_error_is_in_units(generated):
     assert abs(mv - qty * price) < 1.0                     # full units, not thousands
 
 
-def test_unmapped_identifiers_are_blank_in_master_but_used_by_custodian(generated):
-    out, truth = generated
-    master = (out / "landing" / "reference/security_master/2026-07-01/security_master_20260701.csv").read_text()
-    rows = {l.split(",")[0]: l.split(",") for l in master.splitlines()[1:]}
+def test_unmapped_identifiers_are_blank_in_master_but_used_by_custodian(any_client):
+    _, out, truth = any_client
+    master_rel = next(k for k, v in truth["files"].items() if v["source"] == "security_master")
+    rows = {l.split(",")[0]: l.split(",") for l in (out / "landing" / master_rel).read_text().splitlines()[1:]}
     col = {"isin": 1, "cusip": 2, "ticker": 3, "exchange": 4}
-    for p in [p for p in truth["planted"] if p["problem"] == "unmapped_security"]:
-        for field in IDENTIFIER_FIELD[p["source"]]:
-            assert rows[p["security_id"]][col[field]] == ""
+    fields = {"isin": ("isin",), "cusip": ("cusip",), "ticker_exchange": ("ticker", "exchange")}
+    planted = [p for p in truth["planted"] if p["problem"] == "unmapped_security"]
+    assert planted
+    for p in planted:
+        for f in fields[p["identifier_type"]]:
+            assert rows[p["security_id"]][col[f]] == ""
         assert p["affected_rows"] > 0
+    listed = {(e["source"], e["security_id"]) for e in truth["expected_unresolved"]}
+    assert {(p["source"], p["security_id"]) for p in planted} <= listed
 
 
-def test_local_reader_and_rules_reproduce_expected_bronze_outcome(generated):
+def test_local_reader_and_rules_reproduce_expected_bronze_outcome(any_client):
     """Cross-check: what the generator says it planted is what the rules catch."""
-    out, truth = generated
+    _, out, truth = any_client
     sources = {}
     for rel, f in truth["files"].items():
         src = sources.setdefault(f["source"], load_source(f["source"]))
@@ -134,3 +138,30 @@ def test_identifier_check_digits():
     body = "GB00B03MLX2"
     assert isin_check_digit(body) != isin_check_digit("GB00B03MLX3")
     assert len(cusip_check_digit("ABC12345")) == 1
+
+
+def test_adding_a_custodian_leaves_existing_custodian_files_unchanged(generated, tmp_path):
+    """Onboarding Holloway Custody must not change a byte of Harrow, Linden or Pemberton data."""
+    import hashlib
+    out, truth = generated
+    for rel, f in truth["files"].items():
+        if f["source"] in ("harrow", "linden", "pemberton", "prices", "fx"):
+            assert hashlib.sha256((out / "landing" / rel).read_bytes()).hexdigest() == f["sha256"]
+    # the original custodians' files are fixed points: these hashes come from the slice 1-3 dataset
+    h = hashlib.sha256()
+    for rel in sorted(r for r, f in truth["files"].items() if f["source"] in ("harrow", "linden", "pemberton")):
+        h.update((out / "landing" / rel).read_bytes())
+    assert h.hexdigest()[:12] == ORIGINAL_CUSTODIANS_SHA256_PREFIX
+
+
+ORIGINAL_CUSTODIANS_SHA256_PREFIX = "e4de838b7782"  # slice 1-3 dataset, seed 42
+
+
+def test_second_client_has_its_own_accounts_and_plants(any_client):
+    client_id, _, truth = any_client
+    accounts = {x["account_id"] for x in truth["expected_recon"]["non_matched"]}
+    prefix = {"calder_valley": "CV-", "wrexford": "WX-"}[client_id]
+    assert accounts and all(a.startswith(prefix) for a in accounts)
+    kinds = {p["problem"] for p in truth["planted"]}
+    assert {"corrupt_row", "unmapped_security", "quantity_break", "value_break", "missing_position",
+            "late_file", "duplicate_row"} <= kinds
