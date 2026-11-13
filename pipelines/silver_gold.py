@@ -1,4 +1,4 @@
-# Lakeflow declarative pipeline source for silver. All logic lives in the project
+# Lakeflow declarative pipeline source for silver and gold. All logic lives in the project
 # wheel (keelstone.silver.pipeline) and is driven by the YAML configs; this file
 # only reads the pipeline configuration and registers the datasets.
 try:

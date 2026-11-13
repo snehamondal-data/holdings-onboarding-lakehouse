@@ -1,0 +1,6 @@
+resources:
+  dashboards:
+    gold_overview:
+      display_name: "Keelstone gold overview (${var.client}, synthetic data)"
+      file_path: ../dashboards/gold_overview.lvdash.json
+      warehouse_id: ${var.warehouse_id}

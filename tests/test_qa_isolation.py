@@ -39,7 +39,7 @@ def _hits(path: Path) -> list[str]:
 def test_pipeline_code_never_references_qa():
     files = pipeline_files()
     names = {str(f.relative_to(REPO)) for f in files}
-    assert {"jobs/ingest_bronze.py", "pipelines/silver.py", "src/keelstone/silver/pipeline.py"} <= names
+    assert {"jobs/ingest_bronze.py", "pipelines/silver_gold.py", "src/keelstone/silver/pipeline.py"} <= names
     offenders = {str(f.relative_to(REPO)): h for f in files if (h := _hits(f))}
     assert not offenders, offenders
 

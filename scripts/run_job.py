@@ -1,4 +1,7 @@
-"""Run a bundle job with the same variables deploy.py used. Usage: python scripts/run_job.py <job_key>"""
+"""Run a bundle job with the same variables deploy.py used.
+
+  python scripts/run_job.py <job_key> [phase=pending through=2026-08-11 first_update=full_refresh]
+"""
 import subprocess
 import sys
 from pathlib import Path
@@ -8,4 +11,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from deploy import CLI, bundle_vars  # noqa: E402
 
 if __name__ == "__main__":
-    sys.exit(subprocess.run([CLI, "bundle", "run", sys.argv[1], *bundle_vars()], cwd=ROOT).returncode)
+    job, params = sys.argv[1], sys.argv[2:]
+    extra = ["--params", ",".join(params)] if params else []
+    sys.exit(subprocess.run([CLI, "bundle", "run", job, *bundle_vars(), *extra], cwd=ROOT).returncode)

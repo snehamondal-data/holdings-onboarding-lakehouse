@@ -135,3 +135,7 @@ def define(dp, spark, client_id: str, config_dir: str) -> None:
         return (spark.read.table("silver_position_checks").where(F.col("security_id").isNotNull())
                 .groupBy(*POSITION_KEY).agg(F.countDistinct("row_hash").alias("versions"))
                 .where(F.col("versions") > 1))
+
+    # ---- gold (same pipeline) ------------------------------------------------
+    from keelstone.gold.pipeline import define_gold
+    define_gold(dp, spark, client, sources, mv)

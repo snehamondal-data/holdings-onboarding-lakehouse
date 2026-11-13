@@ -9,7 +9,7 @@ dbutils.library.restartPython()  # noqa: F821
 
 # Code comes from the wheel in the artifacts volume, configs from the same volume:
 # serverless cannot reliably read bundle files under /Workspace on this workspace.
-"""Snapshot every silver table (row count + content checksum) into keelstone.qa.silver_snapshots,
+"""Snapshot every silver and gold table (row count + content checksum) into keelstone.qa.silver_snapshots,
 so the idempotency check can compare the tables after update, re-run and full refresh."""
 from datetime import datetime, timezone
 
@@ -27,7 +27,9 @@ label = dbutils.widgets.get("label")  # noqa: F821
 
 SILVER_TABLES = ["silver_positions", "silver_quarantine", "unresolved_securities", "silver_dedupe_log",
                  "silver_identifier_map", "silver_key_conflicts", "silver_position_checks",
-                 "silver_security_master", "silver_prices", "silver_fx", "silver_trades"]
+                 "silver_security_master", "silver_prices", "silver_fx", "silver_trades",
+                 "gold_reconciliation", "gold_break_queue", "gold_positions", "gold_exposure_asset_class",
+                 "gold_exposure_currency", "gold_tieout_daily"]
 
 spark = SparkSession.builder.getOrCreate()
 taken = datetime.now(timezone.utc).isoformat()

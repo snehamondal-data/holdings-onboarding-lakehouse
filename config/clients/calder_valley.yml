@@ -15,3 +15,9 @@ sources:
   - security_master
   - prices
   - fx
+reconciliation:
+  # Book of record vs custodians, per account, security and business date.
+  quantity_tolerance: 0          # units; any difference is a quantity_break
+  value_tolerance:               # value_break when |custodian value - book value| exceeds
+    absolute: 100                #   the larger of this (local currency)
+    relative: 0.0005             #   and this share of the book value (5 bp)

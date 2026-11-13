@@ -18,7 +18,7 @@ from pathlib import Path
 
 from keelstone.generator import writers as W
 from keelstone.generator.plants import Planter, PlantSpec
-from keelstone.generator.universe import simulate
+from keelstone.generator.universe import CUSTODIANS, simulate
 
 GENERATOR_VERSION = "1"
 DEFAULTS = dict(seed=42, start=date(2026, 7, 1), n_days=60, n_securities=300,
@@ -59,6 +59,58 @@ def _sha(text: str) -> str:
 
 def _unmapped_by_custodian(planter: Planter) -> dict:
     return {p["security_id"]: p["source"] for p in planter.planted if p["problem"] == "unmapped_security"}
+
+
+RECON_BREAKS = ("quantity_break", "missing_at_custodian", "missing_in_book", "value_break")
+RECON_UPSTREAM = ("custodian_row_rejected", "custodian_identifier_unresolved", "custodian_row_quarantined")
+
+
+def _expected_recon(world, planter: Planter, spec: PlantSpec) -> dict:
+    """Book of record vs each custodian, key by key, from the true world and the planted views.
+
+    Derived by comparison (not from the plant list), so a test can cross-check the two."""
+    unmapped = _unmapped_by_custodian(planter)
+    non_matched, daily = [], {}
+    for d, day in enumerate(world.days):
+        counts: dict[str, int] = {}
+        for c in CUSTODIANS:
+            book = {(a, sid): sum(l.quantity for l in lots)
+                    for a, held in world.positions[d].items() if world.accounts[a] == c
+                    for sid, lots in held.items()}
+            cust = {(r["account"], r["security_id"]): r for r in planter.views[c][d]}
+            for key in sorted(set(book) | set(cust)):
+                r = cust.get(key)
+                if r is None:
+                    reason = "missing_at_custodian"
+                elif key not in book:
+                    reason = "missing_in_book"
+                elif r["corrupt"]:
+                    reason = "custodian_row_rejected"
+                elif unmapped.get(key[1]) == c:
+                    reason = "custodian_identifier_unresolved"
+                elif c == "linden" and d == spec.linden_units_error_day:
+                    reason = "custodian_row_quarantined"
+                elif r["quantity"] != book[key]:
+                    reason = "quantity_break"
+                elif abs(r["price"] - world.prices[d][key[1]]) > 1e-9:
+                    reason = "value_break"
+                else:
+                    reason = None
+                counts[reason or "matched"] = counts.get(reason or "matched", 0) + 1
+                if reason:
+                    non_matched.append({"business_date": day.isoformat(), "custodian": c, "account_id": key[0],
+                                        "security_id": key[1], "reason": reason})
+        daily[day.isoformat()] = dict(sorted(counts.items()))
+    late_d = spec.pemberton_late_day
+    pending = sum(1 for a, held in world.positions[late_d].items() if world.accounts[a] == "pemberton"
+                  for _ in held)
+    return {"note": "Final state after every file has arrived. Before the late file arrives, the book "
+                    "positions of its custodian and date show as pending_late_file instead.",
+            "breaks": list(RECON_BREAKS), "explained_upstream": list(RECON_UPSTREAM),
+            "late_file": {"custodian": "pemberton", "business_date": world.days[late_d].isoformat(),
+                          "delivery_date": _next_business_day(world.days[late_d]).isoformat(),
+                          "pending_book_positions": pending},
+            "daily": daily, "non_matched": non_matched}
 
 
 def generate(out_dir: Path | str, seed: int = DEFAULTS["seed"], start: date = DEFAULTS["start"],
@@ -175,7 +227,8 @@ def generate(out_dir: Path | str, seed: int = DEFAULTS["seed"], start: date = DE
                           for k, v in sorted(files.items())]}
     truth = {"note": "Synthetic ground truth. Never loaded into lakehouse tables; read only by "
                      "validation jobs and tests.",
-             "params": params, "planted": planter.planted, "files": dict(sorted(files.items()))}
+             "params": params, "planted": planter.planted, "files": dict(sorted(files.items())),
+             "expected_recon": _expected_recon(world, planter, spec)}
     (out / "ground_truth").mkdir(parents=True, exist_ok=True)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (out / "ground_truth" / "ground_truth.json").write_text(json.dumps(truth, indent=2) + "\n",

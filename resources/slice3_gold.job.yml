@@ -1,0 +1,69 @@
+# Bronze ingest, then the silver+gold pipeline: first update (full refresh after a reset,
+# otherwise incremental), a re-run and a full refresh, snapshotting every table after each;
+# then validate against ground truth for the given phase.
+resources:
+  jobs:
+    slice3_gold:
+      name: keelstone-slice3-gold-${var.client}
+      max_concurrent_runs: 1
+      parameters:
+        - {name: phase, default: final}            # pending | final
+        - {name: through, default: ""}              # last delivered business date (pending phase)
+        - {name: first_update, default: incremental} # incremental | full_refresh
+      tasks:
+        - task_key: setup_uc
+          max_retries: 0
+          notebook_task:
+            notebook_path: ../jobs/setup_uc.py
+            base_parameters: {client: "${var.client}"}
+        - task_key: ingest_bronze
+          depends_on: [{task_key: setup_uc}]
+          max_retries: 0
+          notebook_task:
+            notebook_path: ../jobs/ingest_bronze.py
+            base_parameters: {client: "${var.client}", run_id: "{{job.run_id}}-ingest"}
+        - task_key: choose_first_update
+          depends_on: [{task_key: ingest_bronze}]
+          condition_task: {op: EQUAL_TO, left: "{{job.parameters.first_update}}", right: full_refresh}
+        - task_key: update_full_refresh
+          depends_on: [{task_key: choose_first_update, outcome: "true"}]
+          max_retries: 0
+          pipeline_task: {pipeline_id: "${resources.pipelines.silver.id}", full_refresh: true}
+        - task_key: update_incremental
+          depends_on: [{task_key: choose_first_update, outcome: "false"}]
+          max_retries: 0
+          pipeline_task: {pipeline_id: "${resources.pipelines.silver.id}", full_refresh: false}
+        - task_key: snapshot_after_update
+          depends_on: [{task_key: update_full_refresh}, {task_key: update_incremental}]
+          run_if: AT_LEAST_ONE_SUCCESS
+          max_retries: 0
+          notebook_task:
+            notebook_path: ../jobs/validate_silver_snapshot.py
+            base_parameters: {client: "${var.client}", run_tag: "{{job.run_id}}", label: "1_update"}
+        - task_key: rerun
+          depends_on: [{task_key: snapshot_after_update}]
+          max_retries: 0
+          pipeline_task: {pipeline_id: "${resources.pipelines.silver.id}", full_refresh: false}
+        - task_key: snapshot_after_rerun
+          depends_on: [{task_key: rerun}]
+          max_retries: 0
+          notebook_task:
+            notebook_path: ../jobs/validate_silver_snapshot.py
+            base_parameters: {client: "${var.client}", run_tag: "{{job.run_id}}", label: "2_rerun"}
+        - task_key: full_refresh
+          depends_on: [{task_key: snapshot_after_rerun}]
+          max_retries: 0
+          pipeline_task: {pipeline_id: "${resources.pipelines.silver.id}", full_refresh: true}
+        - task_key: snapshot_after_full_refresh
+          depends_on: [{task_key: full_refresh}]
+          max_retries: 0
+          notebook_task:
+            notebook_path: ../jobs/validate_silver_snapshot.py
+            base_parameters: {client: "${var.client}", run_tag: "{{job.run_id}}", label: "3_full_refresh"}
+        - task_key: validate_slice3
+          depends_on: [{task_key: snapshot_after_full_refresh}]
+          max_retries: 0
+          notebook_task:
+            notebook_path: ../jobs/validate_slice3.py
+            base_parameters: {client: "${var.client}", run_tag: "{{job.run_id}}",
+                              phase: "{{job.parameters.phase}}", through: "{{job.parameters.through}}"}

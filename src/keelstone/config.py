@@ -98,6 +98,16 @@ class SourceConfig:
 
 
 @dataclass(frozen=True)
+class ReconConfig:
+    quantity_tolerance: float = 0.0
+    value_abs_tolerance: float = 100.0
+    value_rel_tolerance: float = 0.0005
+
+    def value_tolerance(self, book_value: float) -> float:
+        return max(self.value_abs_tolerance, self.value_rel_tolerance * abs(book_value))
+
+
+@dataclass(frozen=True)
 class ClientConfig:
     client_id: str
     display_name: str
@@ -106,6 +116,7 @@ class ClientConfig:
     landing_volume: str
     checkpoint_volume: str
     sources: tuple[str, ...]
+    reconciliation: ReconConfig = ReconConfig()
 
     @property
     def landing_root(self) -> str:
@@ -318,6 +329,12 @@ def parse_client(d: dict, where: str = "client") -> ClientConfig:
     sources = tuple(_need(d, "sources", where))
     if len(set(sources)) != len(sources):
         raise ConfigError(f"{where}: a source is listed twice")
+    rc = d.get("reconciliation") or {}
+    vt = rc.get("value_tolerance") or {}
+    recon = ReconConfig(float(rc.get("quantity_tolerance", 0)), float(vt.get("absolute", 100)),
+                        float(vt.get("relative", 0.0005)))
+    if min(recon.quantity_tolerance, recon.value_abs_tolerance, recon.value_rel_tolerance) < 0:
+        raise ConfigError(f"{where}: reconciliation tolerances must not be negative")
     return ClientConfig(
         client_id=cid,
         display_name=d.get("display_name", cid),
@@ -326,6 +343,7 @@ def parse_client(d: dict, where: str = "client") -> ClientConfig:
         landing_volume=d.get("landing_volume", "landing"),
         checkpoint_volume=d.get("checkpoint_volume", "_checkpoints"),
         sources=sources,
+        reconciliation=recon,
     )
 
 
