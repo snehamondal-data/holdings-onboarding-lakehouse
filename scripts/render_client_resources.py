@@ -57,6 +57,9 @@ def resources(c) -> dict:
         t("validate_gold", dep("validate_silver"),
           **nb("validate_slice3.py", client=cid, run_tag="{{job.run_id}}", require_snapshots=jp("idempotency_check"))),
     ]
+    if c.performance.measure:   # performance.measure in the client YAML
+        tasks.append(t("measure_performance", dep("validate_gold"), run_if="ALL_DONE",
+                       **nb("measure_performance.py", client=cid, job_run_id="{{job.run_id}}", label=jp("perf_label"))))
     return {"resources": {
         "pipelines": {pipe: {
             "name": f"keelstone-silver-gold-{cid}", "catalog": c.catalog, "schema": c.schema,
@@ -67,11 +70,12 @@ def resources(c) -> dict:
         "jobs": {f"client_{cid}": {
             "name": f"keelstone-client-{cid}", "max_concurrent_runs": 1,
             "queue": {"enabled": True},
-            "trigger": {"pause_status": "UNPAUSED", "file_arrival": {
+            **({"trigger": {"pause_status": "UNPAUSED", "file_arrival": {
                 "url": c.landing_root + "/", "min_time_between_triggers_seconds": 120,
-                "wait_after_last_change_seconds": 120}},
+                "wait_after_last_change_seconds": 120}}} if c.trigger == "file_arrival" else {}),
             "parameters": [{"name": "first_update", "default": "incremental"},
-                           {"name": "idempotency_check", "default": "false"}],
+                           {"name": "idempotency_check", "default": "false"},
+                           *([{"name": "perf_label", "default": "unlabelled"}] if c.performance.measure else [])],
             "tasks": tasks}},
         "dashboards": {f"gold_{cid}": {
             "display_name": f"Keelstone gold overview ({cid}, synthetic data)",

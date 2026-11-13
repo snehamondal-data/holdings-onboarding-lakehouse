@@ -156,15 +156,40 @@ def make_batch_writer(plan_dict: dict, reason_sql: str, run_id: str):
     return write_batch
 
 
+def start_source(spark: SparkSession, plan: StreamPlan, run_id: str):
+    """Start the availableNow stream for one source and return it (not yet awaited)."""
+    plan_dict = asdict(plan)
+    writer = make_batch_writer(plan_dict, quarantine_reason_sql(plan.source), run_id)
+    return (read_stream(spark, plan).writeStream
+            .foreachBatch(writer)
+            .option("checkpointLocation", plan.checkpoint_path)
+            .trigger(availableNow=True)
+            .queryName(f"bronze_{plan.client_id}_{plan.source.source_id}")
+            .start())
+
+
 def run_source(spark: SparkSession, plan: StreamPlan, run_id: str) -> None:
     """Process every new file for one source, then stop (availableNow)."""
     ensure_shared_tables(spark, plan)
-    plan_dict = asdict(plan)
-    writer = make_batch_writer(plan_dict, quarantine_reason_sql(plan.source), run_id)
-    q = (read_stream(spark, plan).writeStream
-         .foreachBatch(writer)
-         .option("checkpointLocation", plan.checkpoint_path)
-         .trigger(availableNow=True)
-         .queryName(f"bronze_{plan.client_id}_{plan.source.source_id}")
-         .start())
-    q.awaitTermination()
+    start_source(spark, plan, run_id).awaitTermination()
+
+
+def run_sources(spark: SparkSession, plans: list, run_id: str, parallel: bool) -> None:
+    """All sources of a client: one after another, or (performance.parallel_ingest) all at once.
+    Each stream keeps its own checkpoint and bronze table; shared tables only receive appends."""
+    if not plans:
+        return
+    if not parallel:
+        for plan in plans:
+            run_source(spark, plan, run_id)
+        return
+    ensure_shared_tables(spark, plans[0])
+    queries = [start_source(spark, plan, run_id) for plan in plans]
+    errors = []
+    for q in queries:
+        try:
+            q.awaitTermination()
+        except Exception as e:  # noqa: BLE001  wait for every stream, then report
+            errors.append(f"{q.name}: {e}")
+    if errors:
+        raise RuntimeError("bronze streams failed: " + "; ".join(errors))

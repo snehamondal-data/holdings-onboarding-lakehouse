@@ -1,0 +1,341 @@
+{
+ "label": "S3_15M_kept_config",
+ "client": "scale_test",
+ "job_run_id": "429222443239193",
+ "measured_at": "2026-11-13T18:55:09.326437+00:00",
+ "ingest": {
+  "files": 0,
+  "rows": null,
+  "seconds": 55.6
+ },
+ "tasks": {
+  "update_incremental": {
+   "seconds": 0.0,
+   "result": "EXCLUDED"
+  },
+  "ingest_bronze": {
+   "seconds": 55.6,
+   "result": "SUCCESS"
+  },
+  "update_full_refresh": {
+   "seconds": 282.7,
+   "result": "SUCCESS"
+  },
+  "wait_for_pipeline_slot": {
+   "seconds": 14.1,
+   "result": "SUCCESS"
+  },
+  "validate_bronze": {
+   "seconds": 42.6,
+   "result": "SUCCESS"
+  },
+  "choose_first_update": {
+   "seconds": 1.0,
+   "result": "SUCCESS"
+  },
+  "setup_uc": {
+   "seconds": 29.9,
+   "result": "SUCCESS"
+  },
+  "choose_idempotency_check": {
+   "seconds": 0.9,
+   "result": "SUCCESS"
+  },
+  "full_refresh": {
+   "seconds": 0.0,
+   "result": "EXCLUDED"
+  },
+  "snapshot_after_update": {
+   "seconds": 0.0,
+   "result": "EXCLUDED"
+  },
+  "snapshot_after_rerun": {
+   "seconds": 0.0,
+   "result": "EXCLUDED"
+  },
+  "validate_gold": {
+   "seconds": 38.7,
+   "result": "SUCCESS"
+  },
+  "validate_silver": {
+   "seconds": 38.3,
+   "result": "SUCCESS"
+  },
+  "snapshot_after_full_refresh": {
+   "seconds": 0.0,
+   "result": "EXCLUDED"
+  },
+  "rerun": {
+   "seconds": 0.0,
+   "result": "EXCLUDED"
+  }
+ },
+ "pipeline": {
+  "update_id": "9ad83d7e-6d80-4569-8492-c28c4c28fe4e",
+  "flows": {
+   "missingFlowName": {
+    "rows": 0,
+    "executor_seconds": 41.800000000000004
+   },
+   "silver_position_checks": {
+    "rows": 14933118,
+    "executor_seconds": 97.9,
+    "seconds": 32.4
+   },
+   "silver_dedupe_log": {
+    "rows": 0,
+    "executor_seconds": 58.5,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 19.8
+   },
+   "silver_security_master": {
+    "rows": 2000,
+    "executor_seconds": 3.2,
+    "seconds": 22.6
+   },
+   "gold_exposure_asset_class": {
+    "rows": 240,
+    "executor_seconds": 1.5,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 3.4
+   },
+   "gold_exposure_currency": {
+    "rows": 180,
+    "executor_seconds": 1.6,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 3.4
+   },
+   "silver_positions": {
+    "rows": 14933118,
+    "executor_seconds": 410.7,
+    "seconds": 78.0
+   },
+   "silver_fx": {
+    "rows": 180,
+    "executor_seconds": 5.0,
+    "seconds": 20.7
+   },
+   "silver_prices": {
+    "rows": 120000,
+    "executor_seconds": 9.3,
+    "seconds": 19.8
+   },
+   "gold_reconciliation": {
+    "rows": 7466559,
+    "executor_seconds": 50.8,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 16.3
+   },
+   "silver_key_conflicts": {
+    "rows": 0,
+    "executor_seconds": 38.2,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 18.0
+   },
+   "unresolved_securities": {
+    "rows": 0,
+    "executor_seconds": 0.9,
+    "seconds": 13.2
+   },
+   "gold_positions": {
+    "rows": 7466559,
+    "executor_seconds": 32.7,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 16.1
+   },
+   "silver_identifier_map": {
+    "rows": 8000,
+    "executor_seconds": 0.5,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 3.1
+   },
+   "silver_quarantine": {
+    "rows": 0,
+    "executor_seconds": 1.4,
+    "seconds": 10.8
+   },
+   "gold_tieout_daily": {
+    "rows": 60,
+    "executor_seconds": 2.4,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 5.4
+   },
+   "gold_break_queue": {
+    "rows": 0,
+    "executor_seconds": 0.2,
+    "refresh": [
+     "MAINTENANCE_TYPE_COMPLETE_RECOMPUTE",
+     "complete_recompute"
+    ],
+    "seconds": 4.3
+   }
+  },
+  "executor_seconds": 756.6,
+  "seconds": 270.9
+ },
+ "tables": {
+  "bronze_file_log": {
+   "files": 11,
+   "bytes": 70440,
+   "cluster_by": []
+  },
+  "bronze_fx": {
+   "files": 2,
+   "bytes": 12064,
+   "cluster_by": []
+  },
+  "bronze_prices": {
+   "files": 2,
+   "bytes": 451848,
+   "cluster_by": []
+  },
+  "bronze_quarantine": {
+   "files": 0,
+   "bytes": 0,
+   "cluster_by": []
+  },
+  "bronze_scale_book": {
+   "files": 2,
+   "bytes": 21265953,
+   "cluster_by": []
+  },
+  "bronze_scale_csv": {
+   "files": 3,
+   "bytes": 38860608,
+   "cluster_by": []
+  },
+  "bronze_scale_lots": {
+   "files": 4,
+   "bytes": 99664888,
+   "cluster_by": []
+  },
+  "bronze_schema_drift_log": {
+   "files": 0,
+   "bytes": 0,
+   "cluster_by": []
+  },
+  "bronze_security_master": {
+   "files": 1,
+   "bytes": 51373,
+   "cluster_by": []
+  },
+  "gold_break_queue": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "gold_exposure_asset_class": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "gold_exposure_currency": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "gold_positions": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "gold_reconciliation": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "gold_tieout_daily": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "silver_dedupe_log": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "silver_fx": {
+   "files": 1,
+   "bytes": 20285,
+   "cluster_by": []
+  },
+  "silver_identifier_map": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "silver_key_conflicts": {
+   "files": null,
+   "note": "materialized view"
+  },
+  "silver_position_checks": {
+   "files": 4,
+   "bytes": 612703199,
+   "cluster_by": []
+  },
+  "silver_positions": {
+   "files": 5,
+   "bytes": 1178211745,
+   "cluster_by": []
+  },
+  "silver_prices": {
+   "files": 1,
+   "bytes": 8841565,
+   "cluster_by": []
+  },
+  "silver_quarantine": {
+   "files": 0,
+   "bytes": 0,
+   "cluster_by": []
+  },
+  "silver_security_master": {
+   "files": 1,
+   "bytes": 194304,
+   "cluster_by": []
+  },
+  "unresolved_securities": {
+   "files": 0,
+   "bytes": 0,
+   "cluster_by": []
+  }
+ },
+ "skew": {
+  "business_date": {
+   "groups": 60,
+   "min": 247786,
+   "median": 248754.0,
+   "max": 250000,
+   "max_over_median": 1.01
+  },
+  "account_id": {
+   "groups": 1250,
+   "min": 10704,
+   "median": 11940.0,
+   "max": 13164,
+   "max_over_median": 1.1
+  },
+  "security_id": {
+   "groups": 2000,
+   "min": 4676,
+   "median": 7443.0,
+   "max": 10644,
+   "max_over_median": 1.43
+  }
+ }
+}

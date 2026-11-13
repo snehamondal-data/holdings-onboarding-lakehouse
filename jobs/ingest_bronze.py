@@ -34,19 +34,23 @@ a = type('Args', (), {"client": dbutils.widgets.get("client"), "run_id": dbutils
 from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 
-from keelstone.config import plan_ingest  # noqa: E402
-from keelstone.ingest.bronze import run_source  # noqa: E402
+from keelstone.config import load_client, plan_ingest  # noqa: E402
+from keelstone.ingest.bronze import run_sources  # noqa: E402
 
 spark = SparkSession.builder.getOrCreate()
 run_id = a.run_id or uuid.uuid4().hex
 plans = plan_ingest(a.client, config_dir=CONFIG_DIR)
 print(f"run_id={run_id} client={a.client} sources={[p.source.source_id for p in plans]}")
 
+ready = []
 for plan in plans:
     if not os.path.isdir(plan.input_path):
         print(f"[{plan.source.source_id}] no landing folder yet at {plan.input_path}; skipped")
         continue
-    run_source(spark, plan, run_id)
+    ready.append(plan)
+client_cfg = load_client(a.client, config_dir=CONFIG_DIR)
+print(f"parallel_ingest={client_cfg.performance.parallel_ingest}")
+run_sources(spark, ready, run_id, parallel=client_cfg.performance.parallel_ingest)
 
 summary = {}
 for plan in plans:

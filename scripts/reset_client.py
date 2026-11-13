@@ -32,22 +32,33 @@ def main() -> None:
     p.add_argument("--client", required=True)
     p.add_argument("--profile", default="keelstone")
     p.add_argument("--yes", action="store_true")
+    p.add_argument("--drop-volumes", action="store_true", help="drop and recreate the landing and checkpoint volumes")
+    p.add_argument("--keep-landing", action="store_true",
+                   help="keep the delivered files; rebuild bronze from them (same data, for before/after runs)")
     a = p.parse_args()
     c = load_client(a.client)
     if not a.yes:
         sys.exit("refusing to reset without --yes")
-    for root in (c.landing_root, c.checkpoint_root):
-        listing = cli("fs", "ls", "dbfs:" + root, profile=a.profile).split()
-        for name in listing:
-            print(f"rm -r {root}/{name}")
-            cli("fs", "rm", "-r", f"dbfs:{root}/{name}", profile=a.profile)
+    volumes = (c.checkpoint_volume,) if a.keep_landing else (c.landing_volume, c.checkpoint_volume)
+    if a.drop_volumes:   # much faster than deleting files one by one; same end state
+        for vol in volumes:
+            name = f"{c.catalog}.{c.schema}.{vol}"
+            print("drop and recreate volume", name)
+            cli("volumes", "delete", name, profile=a.profile)
+            cli("volumes", "create", c.catalog, c.schema, vol, "MANAGED", profile=a.profile)
+    else:
+        for root in ((c.checkpoint_root,) if a.keep_landing else (c.landing_root, c.checkpoint_root)):
+            listing = cli("fs", "ls", "dbfs:" + root, profile=a.profile).split()
+            for name in listing:
+                print(f"rm -r {root}/{name}")
+                cli("fs", "rm", "-r", f"dbfs:{root}/{name}", profile=a.profile)
     tables = json.loads(cli("tables", "list", c.catalog, c.schema, "-o", "json", profile=a.profile) or "[]")
     for t in tables if isinstance(tables, list) else tables.get("tables", []):
         if t["name"].startswith("bronze_"):
             print("drop table", t["full_name"])
             cli("tables", "delete", t["full_name"], profile=a.profile)
     state = ROOT / "data" / c.client_id / "delivery_state.json"
-    if state.exists():
+    if state.exists() and not a.keep_landing:
         state.unlink()
         print("removed", state)
     print("reset done; next: deliver files; the client job's next pipeline update should be a full refresh")

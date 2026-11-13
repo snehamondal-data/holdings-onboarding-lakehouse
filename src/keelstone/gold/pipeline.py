@@ -20,7 +20,7 @@ from keelstone.silver.mapping import identifier_expr
 KEY = ["client_id", "account_id", "security_id", "business_date"]
 
 
-def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv) -> None:
+def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv, clustered=lambda *c: {}) -> None:
     from pyspark.sql import Window
     from pyspark.sql import functions as F
 
@@ -52,7 +52,7 @@ def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv
                 .join(ids, ["identifier_type", "identifier"], "left")
                 .select("custodian", "business_date", "account_id", "security_id"))
 
-    @mv(name="gold_reconciliation", comment="Book of record vs custodians: status and reason per position")
+    @mv(name="gold_reconciliation", **clustered(*KEY), comment="Book of record vs custodians: status and reason per position")
     def gold_reconciliation():
         pos = spark.read.table("silver_positions")
         checks = spark.read.table("silver_position_checks").where(F.col("position_side") == "custodian")
@@ -133,11 +133,11 @@ def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv
                         "book_market_value", "custodian_price", "custodian_market_value", "value_difference",
                         "book_currency"))
 
-    @mv(name="gold_break_queue", comment="Breaks and pending positions for the operations team")
+    @mv(name="gold_break_queue", **clustered(*KEY), comment="Breaks and pending positions for the operations team")
     def gold_break_queue():
         return spark.read.table("gold_reconciliation").where(F.col("status").isin("break", "pending"))
 
-    @mv(name="gold_positions",
+    @mv(name="gold_positions", **clustered(*KEY),
         comment="Trusted position book per client and date: book of record valued in local currency and USD")
     def gold_positions():
         pos = spark.read.table("silver_positions").where(F.col("position_side") == "book")
@@ -157,7 +157,7 @@ def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv
                 .join(recon, KEY, "left")
                 .withColumnRenamed("status", "recon_status").withColumnRenamed("reason_code", "recon_reason"))
 
-    @mv(name="gold_exposure_asset_class", comment="Market value in USD by asset class, per client and date")
+    @mv(name="gold_exposure_asset_class", **clustered("client_id", "business_date"), comment="Market value in USD by asset class, per client and date")
     def gold_exposure_asset_class():
         g = (spark.read.table("gold_positions").groupBy("client_id", "business_date", "asset_class")
              .agg(F.sum("market_value_usd").alias("market_value_usd"), F.count(F.lit(1)).alias("positions")))
@@ -166,7 +166,7 @@ def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv
                 .withColumn("weight", F.round(F.expr("try_divide(market_value_usd, total_usd)"), 6))
                 .drop("total_usd"))
 
-    @mv(name="gold_exposure_currency", comment="Market value by currency (local and USD), per client and date")
+    @mv(name="gold_exposure_currency", **clustered("client_id", "business_date"), comment="Market value by currency (local and USD), per client and date")
     def gold_exposure_currency():
         g = (spark.read.table("gold_positions").groupBy("client_id", "business_date", "currency")
              .agg(F.sum("market_value_local").alias("market_value_local"),
@@ -176,7 +176,7 @@ def define_gold(dp, spark, client: ClientConfig, sources: list[SourceConfig], mv
                 .withColumn("weight", F.round(F.expr("try_divide(market_value_usd, total_usd)"), 6))
                 .drop("total_usd"))
 
-    @mv(name="gold_tieout_daily", comment="Reconciliation counts and tie-out rate per client and date")
+    @mv(name="gold_tieout_daily", **clustered("client_id", "business_date"), comment="Reconciliation counts and tie-out rate per client and date")
     def gold_tieout_daily():
         r = spark.read.table("gold_reconciliation")
         cnt = lambda s: F.sum(F.when(F.col("status") == s, 1).otherwise(0)).cast("bigint")  # noqa: E731

@@ -97,3 +97,15 @@ def test_bad_source_config_is_rejected(bad, msg):
 def test_client_cannot_use_the_qa_schema():
     with pytest.raises(ConfigError, match="reserved"):
         parse_client({"client_id": "x", "catalog": "keelstone", "schema": "qa", "sources": []})
+
+
+def test_performance_and_orchestration_settings():
+    c = load_client("scale_test")
+    assert c.trigger == "manual" and c.performance.measure and c.performance.cluster_by == ()
+    assert load_client("calder_valley").trigger == "file_arrival"
+    with pytest.raises(ConfigError, match="cluster_by"):
+        parse_client({"client_id": "x", "catalog": "k", "schema": "x", "sources": [],
+                      "performance": {"cluster_by": ["market_value"]}})
+    with pytest.raises(ConfigError, match="trigger"):
+        parse_client({"client_id": "x", "catalog": "k", "schema": "x", "sources": [],
+                      "orchestration": {"trigger": "hourly"}})

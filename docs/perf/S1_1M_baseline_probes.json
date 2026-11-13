@@ -1,0 +1,174 @@
+{
+ "label": "S1_1M_baseline",
+ "client": "scale_test",
+ "results": {
+  "latest_day_exposure": {
+   "sql": "SELECT asset_class, sum(market_value_usd) FROM keelstone.scale_test.gold_positions WHERE business_date = DATE'2026-09-22' GROUP BY asset_class",
+   "median_total_ms": 428,
+   "runs": [
+    {
+     "total_time_ms": 456,
+     "execution_time_ms": 257,
+     "read_bytes": 2693728,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 8304,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 428,
+     "execution_time_ms": 231,
+     "read_bytes": 2693728,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 8304,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 422,
+     "execution_time_ms": 237,
+     "read_bytes": 2693728,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 8304,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    }
+   ]
+  },
+  "one_week_recon_status": {
+   "sql": "SELECT status, count(*) FROM keelstone.scale_test.gold_reconciliation WHERE business_date BETWEEN DATE'2026-08-03' AND DATE'2026-08-07' GROUP BY status",
+   "median_total_ms": 438,
+   "runs": [
+    {
+     "total_time_ms": 469,
+     "execution_time_ms": 240,
+     "read_bytes": 262930,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 41840,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 438,
+     "execution_time_ms": 257,
+     "read_bytes": 262930,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 41840,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 393,
+     "execution_time_ms": 218,
+     "read_bytes": 262930,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 41840,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    }
+   ]
+  },
+  "one_day_silver": {
+   "sql": "SELECT source_id, count(*), sum(quantity) FROM keelstone.scale_test.silver_positions WHERE business_date = DATE'2026-09-22' GROUP BY source_id",
+   "median_total_ms": 482,
+   "runs": [
+    {
+     "total_time_ms": 482,
+     "execution_time_ms": 243,
+     "read_bytes": 1531660,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 16608,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 476,
+     "execution_time_ms": 281,
+     "read_bytes": 1531660,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 16608,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 483,
+     "execution_time_ms": 257,
+     "read_bytes": 1531660,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 16608,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    }
+   ]
+  },
+  "one_account_history": {
+   "sql": "SELECT business_date, sum(quantity) FROM keelstone.scale_test.silver_positions WHERE account_id = 'SC-CSV-00010' GROUP BY business_date",
+   "median_total_ms": 455,
+   "runs": [
+    {
+     "total_time_ms": 430,
+     "execution_time_ms": 226,
+     "read_bytes": 1535714,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 11440,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 507,
+     "execution_time_ms": 264,
+     "read_bytes": 1535714,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 11440,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    },
+    {
+     "total_time_ms": 455,
+     "execution_time_ms": 236,
+     "read_bytes": 1535714,
+     "read_files_count": 1,
+     "pruned_files_count": 0,
+     "pruned_bytes": 0,
+     "rows_read_count": 11440,
+     "spill_to_disk_bytes": 0,
+     "network_sent_bytes": 0,
+     "result_from_cache": false
+    }
+   ]
+  }
+ }
+}

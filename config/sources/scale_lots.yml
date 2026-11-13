@@ -1,0 +1,31 @@
+source_id: scale_lots
+display_name: Scale test custodian, Pemberton layout with tax lots, gzipped (synthetic)
+kind: custodian
+format: json                     # JSON Lines: one position per line, tax lots nested
+landing_subdir: scale_lots
+file_glob: "*.jsonl.gz"
+options: {}
+bronze_table: bronze_scale_lots
+columns: [account, position_date, ticker, exchange, currency, price, market_value, lots]
+column_types:
+  lots: "array<struct<lot_id:string,quantity:string,acquired:string,cost_basis:string>>"
+rules:
+  required: [account, position_date, ticker, exchange, lots]
+  numeric: [price, market_value, "lots[].quantity"]
+  dates:
+    position_date: "yyyy-MM-dd"
+silver:
+  target: positions
+  position_side: custodian
+  fields:
+    account_id: account
+    business_date: position_date
+    quantity: "lots[].quantity"   # tax lots summed per position
+    price: price
+    market_value: market_value
+    currency: currency
+  identifier:
+    type: ticker_exchange
+    columns: [ticker, exchange]
+  market_value_multiplier: 1
+  dedupe: exact

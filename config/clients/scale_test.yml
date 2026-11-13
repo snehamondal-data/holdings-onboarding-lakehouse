@@ -1,0 +1,26 @@
+# Scale and performance test client (slice 5). Synthetic, clean data sized by the generator;
+# kept in its own schema so the demo clients' tables and dashboards are untouched.
+client_id: scale_test
+display_name: "Scale test (synthetic, not a client)"
+catalog: keelstone
+schema: scale_test
+landing_volume: landing
+checkpoint_volume: _checkpoints
+sources:
+  - scale_csv
+  - scale_lots
+  - scale_book
+  - security_master
+  - prices
+  - fx
+orchestration:
+  trigger: manual                # runs are started deliberately, one size at a time
+performance:
+  measure: true                  # add the measurement task to this client's job
+  cluster_by: []                 # tried [business_date] in slice 5: no measurable gain at 15M rows, so off
+  parallel_ingest: true          # optimisation 1: bronze source streams run at the same time
+reconciliation:
+  quantity_tolerance: 0
+  value_tolerance:
+    absolute: 100
+    relative: 0.0005

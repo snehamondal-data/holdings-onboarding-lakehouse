@@ -165,3 +165,31 @@ def test_second_client_has_its_own_accounts_and_plants(any_client):
     kinds = {p["problem"] for p in truth["planted"]}
     assert {"corrupt_row", "unmapped_security", "quantity_break", "value_break", "missing_position",
             "late_file", "duplicate_row"} <= kinds
+
+
+def test_scale_mode_is_sized_clean_and_matches_its_ground_truth(tmp_path):
+    """Scale mode: rows close to the target, gzipped files the bronze rules accept, all ties out."""
+    import gzip
+    from collections import Counter
+    from keelstone.generator.scale import generate_scale
+    truth = generate_scale(tmp_path, rows=30_000, n_days=5, n_securities=200, holdings=20)
+    assert 0.95 <= truth["params"]["rows_custodian_and_book"] / 30_000 <= 1.2
+    assert truth["params"]["position_lots"] > 0 and truth["planted"] == []
+    for rel, f in truth["files"].items():
+        raw = (tmp_path / "landing" / rel).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == f["sha256"]
+        text = gzip.decompress(raw).decode() if rel.endswith(".gz") else raw.decode()
+        src = load_source(f["source"])
+        rows = read_rows(src, text)
+        assert len(rows) == f["records"], rel
+        assert not Counter(r for r in (quarantine_reason(src, row) for row in rows) if r), rel
+    book = sum(f["records"] for f in truth["files"].values() if f["source"] == "scale_book")
+    cust = sum(f["records"] for f in truth["files"].values() if f["source"] in ("scale_csv", "scale_lots"))
+    assert book == cust == sum(v["matched"] for v in truth["expected_recon"]["daily"].values())
+
+
+def test_scale_mode_is_deterministic(tmp_path):
+    from keelstone.generator.scale import generate_scale
+    a = generate_scale(tmp_path / "a", rows=10_000, n_days=3, n_securities=100, holdings=10)
+    b = generate_scale(tmp_path / "b", rows=10_000, n_days=3, n_securities=100, holdings=10)
+    assert {k: v["sha256"] for k, v in a["files"].items()} == {k: v["sha256"] for k, v in b["files"].items()}

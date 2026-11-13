@@ -46,6 +46,14 @@ def define(dp, spark, client_id: str, config_dir: str) -> None:
     mv = _mv(dp)
     bronze = lambda src: client.table(src.bronze_table)  # noqa: E731
     seq = F.struct("load_ts", "row_hash")
+    cb = client.performance.cluster_by
+
+    def clustered(*cols_present: str) -> dict:
+        """Liquid clustering from the client YAML (performance.cluster_by), on the columns this table has."""
+        keep = [c for c in cb if c in cols_present]
+        return {"cluster_by": keep} if keep else {}
+
+    POS_COLS = ("client_id", "account_id", "security_id", "business_date")
 
     # ---- reference tables -------------------------------------------------
     for src in references:
@@ -69,7 +77,8 @@ def define(dp, spark, client_id: str, config_dir: str) -> None:
         return df.selectExpr(*[f"{sql} AS `{alias}`" for alias, sql in position_select(src, client_id)])
 
     @dp.table(name="silver_position_checks",
-              comment="Every mapped position row with its silver outcome (audit; expectations counted here)")
+              comment="Every mapped position row with its silver outcome (audit; expectations counted here)",
+              **clustered(*POS_COLS))
     @dp.expect("quantity_not_null", "quantity IS NOT NULL")
     @dp.expect("business_date_not_null", "business_date IS NOT NULL")
     @dp.expect("security_resolved", "security_id IS NOT NULL")
@@ -100,16 +109,19 @@ def define(dp, spark, client_id: str, config_dir: str) -> None:
     by_outcome("v_silver_unresolved", "unresolved")
 
     dp.create_streaming_table("silver_positions",
-                              comment="Canonical positions, one row per client/source/account/security/date")
+                              comment="Canonical positions, one row per client/source/account/security/date",
+                              **clustered(*POS_COLS))
     cdc(target="silver_positions", source="v_silver_ok", keys=list(POSITION_KEY), sequence_by=seq,
         stored_as_scd_type=1, except_column_list=AUDIT_COLS)
 
-    dp.create_streaming_table("silver_quarantine", comment="Rows that failed a silver rule, with the reason")
+    dp.create_streaming_table("silver_quarantine", comment="Rows that failed a silver rule, with the reason",
+                              **clustered(*POS_COLS))
     cdc(target="silver_quarantine", source="v_silver_quarantine", keys=list(QUARANTINE_KEY), sequence_by=seq,
         stored_as_scd_type=1, except_column_list=["outcome", "n_matches"])
 
     dp.create_streaming_table("unresolved_securities",
-                              comment="Positions whose identifier maps to no single security; never dropped")
+                              comment="Positions whose identifier maps to no single security; never dropped",
+                              **clustered("client_id", "account_id", "business_date"))
     cdc(target="unresolved_securities", source="v_silver_unresolved", keys=list(UNRESOLVED_KEY),
         sequence_by=seq, stored_as_scd_type=1, except_column_list=["outcome", "units_suspect"])
 
@@ -138,4 +150,4 @@ def define(dp, spark, client_id: str, config_dir: str) -> None:
 
     # ---- gold (same pipeline) ------------------------------------------------
     from keelstone.gold.pipeline import define_gold
-    define_gold(dp, spark, client, sources, mv)
+    define_gold(dp, spark, client, sources, mv, clustered)

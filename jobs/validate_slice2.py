@@ -21,7 +21,7 @@ Fails the run if any check fails:
   6. Linden rows from drifted files carry header_version 2, earlier ones 1;
   7. planted quantity and value breaks reach silver with the custodian's values;
   8. no natural key appears with two different contents;
-  9. the pipeline's expectation counts (event log) match the routed rows.
+  9. the pipeline's expectation counts since the last full refresh (event log) match the routed rows.
 """
 import json
 import os
@@ -151,13 +151,19 @@ for p in truth["planted"]:
 n_conflicts = spark.table(T("silver_key_conflicts")).count()
 check(n_conflicts == 0, f"{n_conflicts} natural keys with conflicting content")
 
-# 9. expectation counts from the event log (latest update = the full refresh) -------
+# 9. expectation counts from the event log. silver_position_checks only grows between full refreshes,
+#    so its failure counts must equal the expectations' failed_records summed over every update since
+#    (and including) the last full refresh; an incremental update with no new data records none.
 exp_counts = {}
 try:
-    ev = spark.sql(f"SELECT origin.update_id AS u, timestamp, details FROM event_log(TABLE({T('silver_positions')})) "
-                   "WHERE event_type = 'flow_progress'")
-    latest = ev.orderBy(F.col("timestamp").desc()).first()["u"]
-    for r in ev.where(F.col("u") == latest).collect():
+    ev = spark.sql(f"SELECT origin.update_id AS u, timestamp, event_type, details FROM "
+                   f"event_log(TABLE({T('silver_positions')})) WHERE event_type IN ('create_update', 'flow_progress')")
+    updates = [(r["timestamp"], r["u"], (json.loads(r["details"]).get("create_update") or {}).get("full_refresh"))
+               for r in ev.where(F.col("event_type") == "create_update").collect()]
+    full = [ts for ts, _, fr in updates if fr]
+    since = max(full) if full else min(ts for ts, _, _ in updates)
+    counted = {u for ts, u, _ in updates if ts >= since}
+    for r in ev.where((F.col("event_type") == "flow_progress") & F.col("u").isin(list(counted))).collect():
         dq = (json.loads(r["details"]).get("flow_progress") or {}).get("data_quality") or {}
         for e in dq.get("expectations") or []:
             c = exp_counts.setdefault(e["name"], [0, 0])
@@ -167,8 +173,10 @@ try:
     want = {"security_resolved": checks.where("security_id IS NULL").count(),
             "units_scale_sane": checks.where("units_suspect").count(),
             "quantity_not_null": 0, "business_date_not_null": 0}
+    check(sum(p + f for p, f in exp_counts.values()) > 0 or checks.count() == 0,
+          f"no expectation metrics in {len(counted)} update(s) since the last full refresh")
     for name, n_failed in want.items():
-        check(name in exp_counts, f"expectation {name} missing from event log")
+        check(name in exp_counts, f"expectation {name} missing from the event log since the last full refresh")
         if name in exp_counts:
             check(exp_counts[name][1] == n_failed, f"expectation {name}: event log failed {exp_counts[name][1]} != {n_failed}")
 except Exception as e:  # noqa: BLE001

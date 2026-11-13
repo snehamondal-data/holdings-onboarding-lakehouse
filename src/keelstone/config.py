@@ -116,6 +116,13 @@ class ReconConfig:
 
 
 @dataclass(frozen=True)
+class PerformanceConfig:
+    cluster_by: tuple = ()          # liquid clustering columns for the date-keyed silver/gold tables
+    measure: bool = False           # append the performance measurement task to the client job
+    parallel_ingest: bool = False   # run the bronze source streams at the same time
+
+
+@dataclass(frozen=True)
 class ClientConfig:
     client_id: str
     display_name: str
@@ -125,6 +132,8 @@ class ClientConfig:
     checkpoint_volume: str
     sources: tuple[str, ...]
     reconciliation: ReconConfig = ReconConfig()
+    trigger: str = "file_arrival"   # file_arrival | manual
+    performance: PerformanceConfig = PerformanceConfig()
 
     @property
     def landing_root(self) -> str:
@@ -351,6 +360,14 @@ def parse_client(d: dict, where: str = "client") -> ClientConfig:
                         float(vt.get("relative", 0.0005)))
     if min(recon.quantity_tolerance, recon.value_abs_tolerance, recon.value_rel_tolerance) < 0:
         raise ConfigError(f"{where}: reconciliation tolerances must not be negative")
+    orch = d.get("orchestration") or {}
+    trigger = orch.get("trigger", "file_arrival")
+    if trigger not in ("file_arrival", "manual"):
+        raise ConfigError(f"{where}: orchestration.trigger must be file_arrival or manual")
+    perf = d.get("performance") or {}
+    cluster_by = tuple(perf.get("cluster_by") or ())
+    if any(c not in ("business_date", "account_id", "security_id", "client_id") for c in cluster_by):
+        raise ConfigError(f"{where}: performance.cluster_by may use business_date, account_id, security_id, client_id")
     return ClientConfig(
         client_id=cid,
         display_name=d.get("display_name", cid),
@@ -360,6 +377,9 @@ def parse_client(d: dict, where: str = "client") -> ClientConfig:
         checkpoint_volume=d.get("checkpoint_volume", "_checkpoints"),
         sources=sources,
         reconciliation=recon,
+        trigger=trigger,
+        performance=PerformanceConfig(cluster_by, bool(perf.get("measure", False)),
+                                      bool(perf.get("parallel_ingest", False))),
     )
 
 

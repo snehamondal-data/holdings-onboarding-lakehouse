@@ -14,7 +14,8 @@ A forward-deployed engineer at a fictional investment-data platform onboards a c
 | 2 | Silver: config-driven mapping to one position model, security master resolution, units rule, dedupe | done |
 | 3 | Gold: trusted positions in USD, exposure, reconciliation with pending late files, AI/BI dashboard | done |
 | 4 | Orchestration per client (file arrival), a fourth custodian and a second client onboarded by config | done |
-| 5 to 8 | Scale, AWS, AI assistant, docs | not started |
+| 5 | Scale and performance: 1M, 5M and 15M rows measured; one optimisation kept, one rejected | done |
+| 6 to 8 | AWS, AI assistant, docs | not started |
 
 ## Layout
 
@@ -139,6 +140,57 @@ Moving from slice 3's single `silver` pipeline to one pipeline per client meant 
 ### Client isolation
 
 Each client has its own schema, landing volume, checkpoint volume, pipeline and job. `tests/test_client_isolation.py` builds each client's pipeline with recording stand-ins for Spark (no Spark needed), runs every dataset definition, and asserts that every table it reads is its own pipeline dataset or a table in its own schema, and never the other client's. On Databricks, the gold validation also checks Unity Catalog lineage for reads from other schemas.
+
+## Slice 5: scale and performance
+
+**Setup.** A separate `scale_test` client (own schema, landing volume, pipeline, job and dashboard), so the demo clients' tables and dashboards are untouched. The same generator in scale mode (`python scripts/generate.py --client scale_test --rows N`) streams 60 business days of clean data: a Harrow-layout CSV custodian, a Pemberton-layout JSON custodian with nested tax lots, and a matching book of record, all gzipped, plus the reference files. Its sources are new YAML files only. Each size was run through the normal client job (bronze, the silver and gold pipeline, every validation), then a `measure_performance` task recorded the numbers, and `scripts/probe_queries.py` timed four read queries on the SQL warehouse (2X-Small) with the result cache defeated. Every run passed every validation: all rows accounted for, every position tied out.
+
+| Size | Custodian + book rows | Position lots | Accounts | Gzipped files |
+|---|---|---|---|---|
+| 1M | 1,003,896 | 513,444 | 84 | 25 MB |
+| 5M | 4,976,912 | 2,530,535 | 417 | 107 MB |
+| 15M | 14,933,118 | 7,610,960 | 1,250 | 311 MB |
+
+### Runtimes (all measured; numbers from `docs/perf/*_run.json`, table built by `scripts/perf_summary.py`)
+
+| Size | Run | Rows ingested | Bronze s | Bronze rows/s | Pipeline s (wall) | Silver executor s | Gold executor s | Slowest flow (executor s) | Bronze files per table |
+|---|---|---|---|---|---|---|---|---|---|
+| 1M | baseline | 1,126,076 | 225.5 | 4994 | 149.7 | 70.0 | 10.4 | silver_positions (30) | 2 |
+| 5M | baseline | 5,099,092 | 212.6 | 23984 | 173.2 | 190.6 | 30.3 | silver_positions (110) | 2 |
+| 15M | baseline | 15,055,298 | 311.2 | 48378 | 263.0 | 619.0 | 86.4 | silver_positions (403) | 2-3-4 |
+| 15M | + parallel bronze ingest | 15,055,298 | 146.9 | 102487 | 251.5 | 605.7 | 98.9 | silver_positions (397) | 2-3-4 |
+| 15M | + liquid clustering by business_date | 0 (bronze already loaded) | 60.6 | n/a | 266.2 | 608.3 | 122.8 | silver_positions (396) | 2-3-4 |
+| 15M | kept: parallel ingest, no clustering | 0 (bronze already loaded) | 55.6 | n/a | 270.9 | 625.6 | 89.2 | silver_positions (411) | 2-3-4 |
+
+"Rows ingested" includes the reference files. Silver and gold executor seconds are the pipeline event log's `executor_time_ms` summed per layer (work across all executors, so it can exceed wall-clock time).
+
+### Read queries (median of 3 runs, last run's bytes and files; `docs/perf/*_probes.json`)
+
+| Size | Run | latest_day_exposure | one_week_recon_status | one_day_silver | one_account_history |
+|---|---|---|---|---|---|
+| 1M | baseline | 428 ms, 2.7 MB, 1 files (0 pruned) | 438 ms, 0.3 MB, 1 files (0 pruned) | 482 ms, 1.5 MB, 1 files (0 pruned) | 455 ms, 1.5 MB, 1 files (0 pruned) |
+| 5M | baseline | 681 ms, 12.4 MB, 1 files (0 pruned) | 492 ms, 0.3 MB, 1 files (0 pruned) | 611 ms, 12.1 MB, 2 files (0 pruned) | 573 ms, 12.0 MB, 2 files (0 pruned) |
+| 15M | baseline | 750 ms, 37.9 MB, 1 files (0 pruned) | 565 ms, 0.3 MB, 1 files (0 pruned) | 673 ms, 36.7 MB, 5 files (0 pruned) | 603 ms, 37.3 MB, 5 files (0 pruned) |
+| 15M | + liquid clustering by business_date | 708 ms, 15.1 MB, 1 files (1 pruned) | 681 ms, 0.3 MB, 1 files (0 pruned) | 785 ms, 36.7 MB, 5 files (0 pruned) | 673 ms, 37.3 MB, 5 files (0 pruned) |
+
+### What the measurements show
+
+- **Bronze was the slowest stage at every size, and mostly fixed cost.** The 1M run took longer than the 5M run (226 s against 213 s): the eight source streams ran one after another, each paying for stream start-up, micro-batch planning and hashing every file's bytes, so throughput rose from 5,000 to 48,000 rows per second as the data grew.
+- **In the pipeline, the slowest flow is the AUTO CDC MERGE into `silver_positions`**: about 55 % of the pipeline's executor time at 15M (403 of 737 executor seconds). Gold is cheap by comparison (86 executor seconds at 15M). Every gold materialized view was refreshed by complete recompute (the event log's `planning_information`).
+- **At small sizes the pipeline is mostly fixed overhead.** At 1M the update took 150 s of wall-clock time while its longest flow took 19 s and all flows together used 91 executor seconds; the rest is start-up and planning (not broken down further here).
+- **Small files were not a problem**: bronze tables have 2 to 4 files each even at 15M, so there was nothing to fix there and no change was made.
+- **No skew to fix.** In `silver_positions` at 15M the largest business date has 1.01 times the median row count, the largest account 1.1 times, the largest security 1.43 times.
+- **Run-to-run noise.** The pipeline ran four times on the identical 15M data: 251.5 s to 270.9 s (about 7.5 % apart). Differences smaller than that are not real.
+- **What is not available.** Serverless compute has no Spark UI, so there are no stage, task or shuffle-size numbers here. What is available and used: job task timings, the pipeline event log (per-flow rows, wall time and executor time, refresh technique), Delta table details (files, bytes, clustering), and query history metrics for the read queries (time, bytes and files read and pruned).
+
+### Optimisations, before and after on the same 15M data
+
+| Change | Before | After | Kept? |
+|---|---|---|---|
+| **Parallel bronze ingest**: start every source's Auto Loader stream at once instead of one after another (`performance.parallel_ingest: true` in the client YAML) | bronze 311.2 s (48,378 rows/s) | bronze 146.9 s (102,487 rows/s), **2.1 times faster**; all validations pass | **yes** |
+| **Liquid clustering by `business_date`** on the date-keyed silver and gold tables (`performance.cluster_by: [business_date]`) | pipeline 251.5 s; latest-day exposure 750 ms reading 37.9 MB | pipeline 266.2 s (within noise); latest-day exposure 708 ms reading 15.1 MB (1 file pruned); one-week recon 565 to 681 ms and one-day silver 673 to 785 ms (slower, no files pruned: the MERGE-written table was not laid out by date) | **no**: fewer bytes for one query but no measurable time gain at this size on a 2X-Small warehouse. The setting stays available in YAML; it should be re-tested at larger sizes |
+
+Both are generic, config-driven engine features (any client can switch them in its YAML). Re-running Calder Valley's and Wrexford's jobs after this slice found one validation gap (not caused by the slice 5 changes): the silver check compared expectation counts from the latest pipeline update only, and an incremental update with no new data records none. It now sums them over every update since the last full refresh; both clients then passed bronze, silver and gold validation. The final `scale_test` run with the kept configuration (parallel ingest on, clustering off) passed every validation; its pipeline took 270.9 s.
 
 ## Databricks Free Edition notes
 

@@ -1,0 +1,32 @@
+source_id: scale_csv
+display_name: Scale test custodian, Harrow layout, gzipped (synthetic)
+kind: custodian
+format: csv
+landing_subdir: scale_csv
+file_glob: "*.csv.gz"
+options:
+  delimiter: ","
+  header: true
+bronze_table: bronze_scale_csv
+# Columns as received, in header order. Bronze keeps every value as a string.
+columns: [account_id, as_of_date, isin, security_name, quantity, price, market_value, currency]
+rules:
+  required: [account_id, as_of_date, isin, quantity]
+  numeric: [quantity, price, market_value]
+  dates:
+    as_of_date: "yyyy-MM-dd"
+silver:
+  target: positions
+  position_side: custodian
+  fields:                       # canonical field: bronze column
+    account_id: account_id
+    business_date: as_of_date   # parsed with rules.dates[as_of_date]
+    quantity: quantity
+    price: price
+    market_value: market_value
+    currency: currency
+  identifier:
+    type: isin
+    columns: [isin]
+  market_value_multiplier: 1    # values in units
+  dedupe: exact
