@@ -15,7 +15,8 @@ A forward-deployed engineer at a fictional investment-data platform onboards a c
 | 3 | Gold: trusted positions in USD, exposure, reconciliation with pending late files, AI/BI dashboard | done |
 | 4 | Orchestration per client (file arrival), a fourth custodian and a second client onboarded by config | done |
 | 5 | Scale and performance: 1M, 5M and 15M rows measured; one optimisation kept, one rejected | done |
-| 6 to 8 | AWS, AI assistant, docs | not started |
+| 6 | AWS landing zone: S3, a validating forwarder Lambda, SQS dead-letter queue, all by CloudFormation | done |
+| 7 to 8 | AI assistant, docs | not started |
 
 ## Layout
 
@@ -32,6 +33,7 @@ src/keelstone/qa/               where ground truth lives; pipeline code may not 
 jobs/                           Databricks notebooks: setup, ingest, validation
 resources/clients/              per-client pipeline, job and dashboard (generated from the client YAML)
 scripts/                        generate, deliver (upload by delivery date), build wheel, deploy
+aws/                            S3 landing zone: CloudFormation template, forwarder Lambda, deploy/teardown, e2e checks
 tests/                          local pytest (plain Python, no Spark needed)
 ```
 
@@ -191,6 +193,52 @@ Each client has its own schema, landing volume, checkpoint volume, pipeline and 
 | **Liquid clustering by `business_date`** on the date-keyed silver and gold tables (`performance.cluster_by: [business_date]`) | pipeline 251.5 s; latest-day exposure 750 ms reading 37.9 MB | pipeline 266.2 s (within noise); latest-day exposure 708 ms reading 15.1 MB (1 file pruned); one-week recon 565 to 681 ms and one-day silver 673 to 785 ms (slower, no files pruned: the MERGE-written table was not laid out by date) | **no**: fewer bytes for one query but no measurable time gain at this size on a 2X-Small warehouse. The setting stays available in YAML; it should be re-tested at larger sizes |
 
 Both are generic, config-driven engine features (any client can switch them in its YAML). Re-running Calder Valley's and Wrexford's jobs after this slice found one validation gap (not caused by the slice 5 changes): the silver check compared expectation counts from the latest pipeline update only, and an incremental update with no new data records none. It now sums them over every update since the last full refresh; both clients then passed bronze, silver and gold validation. The final `scale_test` run with the kept configuration (parallel ingest on, clustering off) passed every validation; its pipeline took 270.9 s.
+
+## Slice 6: AWS landing zone
+
+**Why a forwarding Lambda.** In production, Databricks would read the S3 bucket directly: a Unity Catalog storage credential (an IAM role) and an external location on the bucket, with Auto Loader and the file-arrival trigger pointed at the S3 path. Databricks Free Edition has no account console and does not allow custom storage locations, so it cannot read a bucket in your own AWS account. This project therefore lands files in S3 and forwards them into the client's Unity Catalog volume through the Databricks Files API; from there the existing file-arrival trigger, pipeline and validations run unchanged. The forwarder also does the checks a landing zone should do before anything reaches the lakehouse.
+
+```
+custodian file -> s3://keelstone-landing-<account>-us-east-2/incoming/<client>/<source>/<date>/<file>
+  -> S3 event -> Lambda (Python 3.13, standard library + boto3)
+       check against the source YAML: client and source known, file name matches file_glob,
+       non-empty, readable (gzip opens, first line is UTF-8); SHA-256
+       bad  -> quarantine/<same key>, tagged and annotated with the reason; original removed
+       good -> Files API PUT into /Volumes/keelstone/<client>/landing/<same path>, overwrite=false
+               (409 = already there: a duplicate, skipped)
+       Databricks unreachable or refusing -> exception -> 2 retries -> SQS dead-letter queue
+  -> the client's file-arrival trigger -> bronze -> silver and gold pipeline -> validation
+```
+
+**Infrastructure as code.** `aws/template.yaml` (one CloudFormation stack, deployed by `aws/deploy.sh` with the AWS CLI): the landing bucket (public access blocked, SSE-S3 encryption, bucket owner enforced, TLS-only policy, lifecycle deleting every object after 7 days), the Lambda with an async retry limit of 2 and the SQS dead-letter queue, a log group kept 7 days, and an IAM role that may only read and delete under `incoming/`, write under `quarantine/`, read the one SSM parameter, send to the one queue and write its own logs. The workspace URL is a stack parameter given at deploy time, never committed. `aws/teardown.sh` deletes the stack, both buckets, the SSM parameter and the Databricks identity.
+
+**Secrets and identity.** The Databricks token lives only in SSM Parameter Store as a SecureString (`/keelstone/databricks/token`), written by `aws/databricks_identity.py` straight from the Databricks API (never printed or stored in the repo). The token belongs to a dedicated Databricks service principal, `keelstone-landing-forwarder`, with only the `workspace-access` entitlement (the Files API refuses identities without one) and Unity Catalog grants of `USE CATALOG`, `USE SCHEMA` and read/write on one client's landing volume; it expires after 7 days. The Lambda reads it from SSM at run time and caches it per container.
+
+**Tests.** `tests/test_aws_forwarder.py`: 17 local unit tests with S3, SSM and HTTP stubbed (no AWS calls): routing from the YAML, every quarantine reason, gzip, URL-encoded keys, the exact Files API request, the 409 duplicate path, and failures that must raise so Lambda retries and dead-letters.
+
+**End-to-end run on AWS (us-east-2), measured.** A separate `wrexford_e2e` client (Wrexford's source YAMLs in its own schema) received days 1 to 59 the usual way and was validated, then day 60 was uploaded to S3:
+
+| Check | Result |
+|---|---|
+| Day 60 (5 files) uploaded to S3 | all 5 files in the Databricks landing volume 3.5 to 5.0 s after the upload started |
+| File-arrival trigger | job started 161 s after the upload; bronze loaded exactly those 5 files, once |
+| Validation | bronze, silver and gold passed through 2026-09-22 (all 60 days), tie-out 99.05 % |
+| **S3 upload to validated gold** | **696 s (11.6 min)** |
+| Duplicate upload (same object again) | forwarder logged `duplicate` (Databricks returned 409, same SHA-256); nothing loaded twice |
+| Bad files | an empty file and a misnamed file moved to `quarantine/` with their reasons; originals removed |
+| Databricks outage (stack parameter `SimulateOutage=true`) | the event went to the SQS dead-letter queue after 2 retries, 196.8 s after upload, with "cannot reach Databricks" |
+| Teardown (`aws/teardown.sh`) | stack, Lambda, queue, log group, role, both buckets and the SSM parameter deleted; Databricks token revoked and service principal deleted; checked afterwards. The `wrexford_e2e` client was then removed from Databricks (`deploy: false` in its YAML) |
+
+AWS cost: estimated under $0.05 for the whole slice, all inside free-tier allowances (estimate from list prices and the usage above; not checked against the billing console).
+
+**Findings (the hard way).**
+
+1. **New-experience AWS accounts are tied to a home Region by AWS-managed service control policies.** This account's home Region is us-east-2 (Ohio). In us-east-1 every regional service this slice needs (S3, Lambda, SQS, SSM, Secrets Manager, CloudFormation) was refused with "explicit deny in a service control policy", even though the role has AdministratorAccess; the managed SCPs only allow global and control-plane services in us-east-1 and us-west-2. We first read it as a custom restriction; the IAM policy simulator with `aws:RequestedRegion=us-east-2` then showed every needed action allowed, and everything was moved to us-east-2.
+2. **A service principal needs an access entitlement before any API works.** The first forward of day 60 got HTTP 403 ("API is disabled for users without the ... workspace-access ... entitlements"). The Unity Catalog grants alone were not enough. The failure path worked as designed (2 retries, then the dead-letter queue, files kept in S3); after adding `workspace-access` the same files were uploaded again and went through. The identity script now grants it.
+3. **S3 tag values reject quotes and `*`.** The misnamed file's reason ("does not match quayside pattern '*.tsv'") made `CopyObject` fail with InvalidTag, so it was retried and dead-lettered instead of quarantined. The unit tests' fake S3 did not enforce tag rules; it does now, and the tag value is reduced to allowed characters (the full reason stays in the object metadata).
+4. Outside us-east-1, `s3api create-bucket` needs an explicit `LocationConstraint`; the deploy script now sets it.
+
+**Production notes.** A production setup would (a) let Databricks read the bucket directly through a Unity Catalog storage credential and external location instead of forwarding files, and (b) deploy with a narrowly scoped CI/CD role limited to this stack's resources, not the account-wide `AccountFullAccessRole` (AdministratorAccess) used here from the CLI.
 
 ## Databricks Free Edition notes
 

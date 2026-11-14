@@ -133,6 +133,7 @@ class ClientConfig:
     sources: tuple[str, ...]
     reconciliation: ReconConfig = ReconConfig()
     trigger: str = "file_arrival"   # file_arrival | manual
+    deploy: bool = True             # false: the render script removes this client's pipeline, job, dashboard
     performance: PerformanceConfig = PerformanceConfig()
 
     @property
@@ -378,6 +379,7 @@ def parse_client(d: dict, where: str = "client") -> ClientConfig:
         sources=sources,
         reconciliation=recon,
         trigger=trigger,
+        deploy=bool(d.get("deploy", True)),
         performance=PerformanceConfig(cluster_by, bool(perf.get("measure", False)),
                                       bool(perf.get("parallel_ingest", False))),
     )

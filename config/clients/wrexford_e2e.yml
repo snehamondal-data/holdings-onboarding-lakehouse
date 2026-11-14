@@ -1,0 +1,20 @@
+# Slice 6 end-to-end test client: Wrexford's sources in their own schema, fed through the AWS landing zone.
+client_id: wrexford_e2e
+deploy: false                    # removed after the slice 6 end-to-end test; kept as a record
+display_name: "Wrexford end-to-end test via AWS (fictional, synthetic)"
+catalog: keelstone
+schema: wrexford_e2e             # end-to-end test of the AWS landing zone (slice 6)
+landing_volume: landing
+checkpoint_volume: _checkpoints
+sources:
+  - linden_wrexford              # Linden Bank, in the layout it uses for this client
+  - quayside
+  - wrexford_book
+  - security_master              # shared reference formats, landed separately per client
+  - prices
+  - fx
+reconciliation:
+  quantity_tolerance: 0
+  value_tolerance:
+    absolute: 250                # this client's own operations policy
+    relative: 0.001

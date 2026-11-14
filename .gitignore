@@ -25,3 +25,7 @@ data/
 
 # built wheels
 dist/
+
+# AWS build outputs
+aws/.packaged.yaml
+aws/lambda/forwarder/landing_config.json

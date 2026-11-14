@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Keelstone holdings onboarding (synthetic data): S3 landing zone that validates custodian files
+  and forwards good ones into the client's Databricks landing volume. Deploy with aws/deploy.sh,
+  delete with aws/teardown.sh.
+
+Parameters:
+  DatabricksHost:
+    Type: String
+    NoEcho: true
+    Description: Workspace URL (https://...). Supplied at deploy time, never committed.
+  TokenParameterName:
+    Type: String
+    Default: /keelstone/databricks/token
+    Description: SSM SecureString holding the Databricks token (created by aws/set_token.py, not by this template).
+  SimulateOutage:
+    Type: String
+    AllowedValues: ["false", "true"]
+    Default: "false"
+    Description: "true points the Lambda at an unreachable host, to test retries and the dead-letter queue."
+
+Conditions:
+  Outage: !Equals [!Ref SimulateOutage, "true"]
+
+Resources:
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: keelstone-landing-forwarder-dlq
+      MessageRetentionPeriod: 345600          # 4 days
+      SqsManagedSseEnabled: true
+
+  ForwarderLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/keelstone-landing-forwarder
+      RetentionInDays: 7
+
+  ForwarderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: keelstone-landing-forwarder
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadAndRemoveIncoming
+                Effect: Allow
+                Action: [s3:GetObject, s3:DeleteObject]
+                Resource: !Sub "arn:${AWS::Partition}:s3:::keelstone-landing-${AWS::AccountId}-${AWS::Region}/incoming/*"
+              - Sid: WriteQuarantine
+                Effect: Allow
+                Action: [s3:PutObject, s3:PutObjectTagging]
+                Resource: !Sub "arn:${AWS::Partition}:s3:::keelstone-landing-${AWS::AccountId}-${AWS::Region}/quarantine/*"
+              - Sid: ReadTheTokenParameter
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${TokenParameterName}"
+              - Sid: SendToTheDeadLetterQueue
+                Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt DeadLetterQueue.Arn
+              - Sid: OwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt ForwarderLogGroup.Arn
+
+  Forwarder:
+    Type: AWS::Lambda::Function
+    DependsOn: ForwarderLogGroup
+    Properties:
+      FunctionName: keelstone-landing-forwarder
+      Runtime: python3.13
+      Handler: handler.handler
+      Code: lambda/forwarder              # packaged by `aws cloudformation package` in deploy.sh
+      Role: !GetAtt ForwarderRole.Arn
+      MemorySize: 256
+      Timeout: 60
+      DeadLetterConfig:
+        TargetArn: !GetAtt DeadLetterQueue.Arn
+      Environment:
+        Variables:
+          DATABRICKS_HOST: !If [Outage, "https://databricks-outage.invalid", !Ref DatabricksHost]
+          TOKEN_PARAMETER: !Ref TokenParameterName
+
+  ForwarderInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref Forwarder
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 2               # then the event goes to the dead-letter queue
+      MaximumEventAgeInSeconds: 3600
+
+  S3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt Forwarder.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub "arn:${AWS::Partition}:s3:::keelstone-landing-${AWS::AccountId}-${AWS::Region}"
+
+  LandingBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: S3InvokePermission
+    Properties:
+      BucketName: !Sub "keelstone-landing-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-after-7-days
+            Status: Enabled
+            ExpirationInDays: 7
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt Forwarder.Arn
+            Filter:
+              S3Key:
+                Rules: [{Name: prefix, Value: incoming/}]
+
+  LandingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LandingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: TlsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt LandingBucket.Arn
+              - !Sub "${LandingBucket.Arn}/*"
+            Condition: {Bool: {aws:SecureTransport: "false"}}
+
+Outputs:
+  LandingBucket:
+    Value: !Ref LandingBucket
+  DeadLetterQueueUrl:
+    Value: !Ref DeadLetterQueue
+  ForwarderFunction:
+    Value: !Ref Forwarder

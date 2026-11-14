@@ -66,4 +66,6 @@ class ClientSpec:
 CLIENTS = {
     "calder_valley": ClientSpec("calder_valley", base=True, extras=(HOLLOWAY,)),
     "wrexford": ClientSpec("wrexford", base=False, extras=(LINDEN_WREXFORD, QUAYSIDE), book=WREXFORD_BOOK),
+    # slice 6: Wrexford's layouts for the AWS landing-zone end-to-end test (own random streams, own schema)
+    "wrexford_e2e": ClientSpec("wrexford_e2e", base=False, extras=(LINDEN_WREXFORD, QUAYSIDE), book=WREXFORD_BOOK),
 }

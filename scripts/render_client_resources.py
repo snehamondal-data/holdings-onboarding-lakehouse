@@ -89,6 +89,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for path in sorted((ROOT / "config" / "clients").glob("*.yml")):
         c = load_client(path.stem)
+        if not c.deploy:     # deploy: false in the client YAML -> nothing deployed for it
+            for f in (out_dir / f"{c.client_id}.yml", ROOT / "dashboards" / f"{c.client_id}.lvdash.json"):
+                f.unlink(missing_ok=True)
+            print("not deployed", c.client_id)
+            continue
         (out_dir / f"{c.client_id}.yml").write_text(
             HEADER.format(client=c.client_id) + yaml.safe_dump(resources(c), sort_keys=False, width=120))
         dash = template.replace("__SCHEMA__", c.schema).replace("__CLIENT_NAME__", c.display_name)
