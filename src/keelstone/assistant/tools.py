@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import csv
 import io
+import itertools
 import json
+import math
 import re
 import statistics
 from collections import Counter
@@ -15,7 +17,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 DELIMITERS = [",", ";", "|", "\t"]
-DATE_PATTERNS = ["yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd.MM.yyyy", "yyyyMMdd", "dd-MM-yyyy"]
+# Every order of year, month and day with every common separator (30 patterns), so the candidate
+# list is generic rather than a list of the formats our own sources happen to use.
+DATE_PATTERNS = [sep.join(order) for order in itertools.permutations(("yyyy", "MM", "dd"))
+                 for sep in ("-", "/", ".", "", " ")]
 NUMBER_STYLES = {                       # (decimal_separator, thousands_separator)
     "dot_decimal": (".", ""), "dot_decimal_comma_thousands": (".", ","),
     "comma_decimal": (",", ""), "comma_decimal_dot_thousands": (",", "."),
@@ -104,7 +109,7 @@ class Sample:
 
     def sniff_delimiter(self) -> dict:
         if self.is_json:
-            return {"note": "JSON Lines: no delimiter"}
+            return {"note": "one object per line: no separator"}
         sample = self.lines[:60]
         out = {}
         for d in DELIMITERS:
@@ -193,7 +198,8 @@ class Sample:
             return {"rows_used": 0, "note": "no rows with quantity, price and value all numeric in that style"}
         med = statistics.median(ratios)
         suggestion = 1.0 / med if med else None
-        nice = min((1.0, 1000.0, 0.001, 100.0, 1_000_000.0), key=lambda m: abs((suggestion or 0) - m) / m)
+        # nearest power of ten (a generic rule, not a list of the multipliers our sources use)
+        nice = 10.0 ** round(math.log10(suggestion)) if suggestion and suggestion > 0 else None
         return {"rows_used": len(ratios), "median_value_over_qty_x_price": round(med, 6),
                 "suggested_market_value_multiplier": nice,
                 "share_within_1pct_of_median": round(sum(1 for x in ratios if abs(x - med) <= 0.01 * abs(med)) / len(ratios), 3)}
@@ -217,7 +223,7 @@ TOOL_FUNCTIONS = {
     "estimate_units": Sample.estimate_units,
 }
 
-_NULLABLE_DELIM = {"type": ["string", "null"], "description": "the field delimiter, or null for JSON Lines"}
+_NULLABLE_DELIM = {"type": ["string", "null"], "description": "the field separator, or null when each line is one object"}
 
 
 def _tool(name, description, props, required):
@@ -226,19 +232,21 @@ def _tool(name, description, props, required):
 
 
 TOOL_SCHEMAS = [
-    _tool("describe_sample", "Size, line count and whether the sample looks like JSON Lines or delimited text.", {}, []),
+    _tool("describe_sample", "Size, line count, and whether the sample looks like one object per line or delimited text.", {}, []),
     _tool("read_lines", f"Read raw lines from the sample (at most {MAX_LINES} per call).",
           {"start": {"type": "integer"}, "count": {"type": "integer"}}, ["start", "count"]),
-    _tool("sniff_delimiter", "For each candidate delimiter, how many fields per line and how consistently.", {}, []),
-    _tool("list_columns", "Header columns (delimited) or keys (JSON), including fields inside nested arrays as name[].field.",
+    _tool("sniff_delimiter", "For each candidate separator, how many fields per line and how consistently.", {}, []),
+    _tool("list_columns", "Field names (the header row, or each object's keys), including fields inside arrays of "
+          "sub-records, written array[].field.",
           {"delimiter": _NULLABLE_DELIM}, ["delimiter"]),
-    _tool("profile_column", "Sample values, null share, which number styles and date patterns parse, identifier shapes.",
+    _tool("profile_column", "Sample values, share of empty values, which number styles and date patterns parse, "
+          "and identifier shapes.",
           {"delimiter": _NULLABLE_DELIM, "column": {"type": "string"}}, ["delimiter", "column"]),
-    _tool("match_identifiers", "Share of a column's identifiers found in the security master as ISIN, CUSIP or security_id; "
-          "pass two columns (ticker, exchange) to test ticker:exchange.",
+    _tool("match_identifiers", "Share of a field's identifiers found in the security master under each identifier "
+          "scheme; for a two-part identifier (symbol and venue) pass both fields.",
           {"delimiter": _NULLABLE_DELIM, "columns": {"type": "array", "items": {"type": "string"}}}, ["delimiter", "columns"]),
-    _tool("estimate_units", "Median of value / (quantity x price) and the market value multiplier that would bring it to 1. "
-          "Use name[].field for a quantity summed over nested lots.",
+    _tool("estimate_units", "Median of value / (amount held x quote) and the multiplier that would bring it to 1. "
+          "For an amount summed over sub-records, pass array[].field.",
           {"delimiter": _NULLABLE_DELIM, "quantity_column": {"type": "string"}, "price_column": {"type": "string"},
            "value_column": {"type": "string"}, "decimal_separator": {"type": "string", "enum": [".", ","]},
            "thousands_separator": {"type": "string", "enum": ["", ".", ",", " ", "'"]}},

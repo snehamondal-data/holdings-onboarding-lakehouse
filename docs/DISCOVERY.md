@@ -33,7 +33,7 @@ The client's **investment operations team: 6 people (fictional)**.
 
 | # | Metric | Target | Measured (synthetic data) | Met? |
 |---|---|---|---|---|
-| 1 | **Time to onboard a new custodian or client** | A config file and one validated run, under a day | Holloway Custody (new custodian, new format): 34 lines of YAML, 13.9 min from delivery to validated gold, plus two one-off generic engine changes. Wrexford (new client): 109 lines of YAML, no engine change, 12.7 min. The AI assistant drafts a source's YAML from one sample: 127 of 128 fields correct across 8 known sources | Yes |
+| 1 | **Time to onboard a new custodian or client** | A config file and one validated run, under a day | Holloway Custody (new custodian, new format): 34 lines of YAML, 13.9 min from delivery to validated gold, plus two one-off generic engine changes. Wrexford (new client): 109 lines of YAML, no engine change, 12.7 min. The AI assistant drafts a source's YAML from one sample: 128 of 128 fields correct across 8 known sources, with a prompt tested to contain no value from their configs | Yes |
 | 2 | **Pipeline runtime at scale** | Measured | 15 million rows: bronze 147 s (after parallel ingest; 311 s before), silver and gold pipeline about 250 to 270 s | Measured |
 | 3 | **Zero silent drops** | Every input row in silver, quarantine or the unresolved queue | Checked after every run, file by file: bronze rows = silver + quarantine + unresolved + deduplicated, matching ground truth | Yes |
 | 4 | **Positions that tie out** | As high as the data allows, every exception explained | Calder Valley 98.07 %, Wrexford 98.88 %; every non-matched position is a planted break or explained upstream; 0 unexplained | Yes |

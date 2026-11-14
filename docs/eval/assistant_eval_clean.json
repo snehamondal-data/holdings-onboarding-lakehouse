@@ -1,0 +1,1089 @@
+{
+ "model": "claude-sonnet-5-5",
+ "sample_date": "2026-07-08",
+ "prompt_sha256": "05fc0a6aec41b556b037e517c15c0e1e6d7670c6fe3eae6c56eb5ca97059470d",
+ "total_spend_usd": 0.1867,
+ "tokens": {
+  "input": 80,
+  "output": 9965,
+  "cache_write": 31741,
+  "cache_read": 75794
+ },
+ "model_calls": 32,
+ "rows": [
+  {
+   "source_id": "harrow",
+   "client": "calder_valley",
+   "sample": "harrow_positions_20260708.csv",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 4,
+   "spend_usd": 0.025,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": ",",
+     "want": ","
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "yyyy-MM-dd",
+     "want": "yyyy-MM-dd"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "isin",
+     "want": "isin"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "isin"
+     ],
+     "want": [
+      "isin"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1.0,
+     "want": 1.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "account_id",
+     "want": "account_id"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "as_of_date",
+     "want": "as_of_date"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "quantity",
+     "want": "quantity"
+    },
+    "price": {
+     "ok": true,
+     "got": "price",
+     "want": "price"
+    },
+    "market_value": {
+     "ok": true,
+     "got": "market_value",
+     "want": "market_value"
+    },
+    "currency": {
+     "ok": true,
+     "got": "currency",
+     "want": "currency"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "account_id",
+      "as_of_date",
+      "isin",
+      "security_name",
+      "quantity",
+      "price",
+      "market_value",
+      "currency"
+     ],
+     "want": [
+      "account_id",
+      "as_of_date",
+      "isin",
+      "security_name",
+      "quantity",
+      "price",
+      "market_value",
+      "currency"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "market_value",
+      "price",
+      "quantity"
+     ],
+     "want": [
+      "market_value",
+      "price",
+      "quantity"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 180,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0222,
+    "units_rows": 180,
+    "units_median_ratio": 1.0,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 8
+  },
+  {
+   "source_id": "linden",
+   "client": "calder_valley",
+   "sample": "linden_holdings_20260708.txt",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 8,
+   "spend_usd": 0.0199,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": "|",
+     "want": "|"
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "dd/MM/yyyy",
+     "want": "dd/MM/yyyy"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "cusip",
+     "want": "cusip"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "CUSIP"
+     ],
+     "want": [
+      "CUSIP"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1000.0,
+     "want": 1000.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "ACCT",
+     "want": "ACCT"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "POS_DATE",
+     "want": "POS_DATE"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "NOMINAL",
+     "want": "NOMINAL"
+    },
+    "price": {
+     "ok": true,
+     "got": "MKT_PRICE",
+     "want": "MKT_PRICE"
+    },
+    "market_value": {
+     "ok": true,
+     "got": "MKT_VALUE_000",
+     "want": "MKT_VALUE_000"
+    },
+    "currency": {
+     "ok": true,
+     "got": "CCY",
+     "want": "CCY"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "ACCT",
+      "POS_DATE",
+      "CUSIP",
+      "DESCRIPTION",
+      "NOMINAL",
+      "MKT_PRICE",
+      "MKT_VALUE_000",
+      "CCY"
+     ],
+     "want": [
+      "ACCT",
+      "POS_DATE",
+      "CUSIP",
+      "DESCRIPTION",
+      "NOMINAL",
+      "MKT_PRICE",
+      "MKT_VALUE_000",
+      "CCY"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "MKT_PRICE",
+      "MKT_VALUE_000",
+      "NOMINAL"
+     ],
+     "want": [
+      "MKT_PRICE",
+      "MKT_VALUE_000",
+      "NOMINAL"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 187,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.016,
+    "units_rows": 187,
+    "units_median_ratio": 1.0,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 8
+  },
+  {
+   "source_id": "pemberton",
+   "client": "calder_valley",
+   "sample": "pemberton_positions_20260708.jsonl",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 12,
+   "spend_usd": 0.0176,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "json",
+     "want": "json"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": null,
+     "want": null
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "yyyy-MM-dd",
+     "want": "yyyy-MM-dd"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "ticker_exchange",
+     "want": "ticker_exchange"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "ticker",
+      "exchange"
+     ],
+     "want": [
+      "ticker",
+      "exchange"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1.0,
+     "want": 1.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "account",
+     "want": "account"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "position_date",
+     "want": "position_date"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "lots[].quantity",
+     "want": "lots[].quantity"
+    },
+    "price": {
+     "ok": true,
+     "got": "price",
+     "want": "price"
+    },
+    "market_value": {
+     "ok": true,
+     "got": "market_value",
+     "want": "market_value"
+    },
+    "currency": {
+     "ok": true,
+     "got": "currency",
+     "want": "currency"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "account",
+      "position_date",
+      "ticker",
+      "exchange",
+      "currency",
+      "price",
+      "market_value",
+      "lots"
+     ],
+     "want": [
+      "account",
+      "position_date",
+      "ticker",
+      "exchange",
+      "currency",
+      "price",
+      "market_value",
+      "lots"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "lots[].quantity",
+      "market_value",
+      "price"
+     ],
+     "want": [
+      "lots[].quantity",
+      "market_value",
+      "price"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 181,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0055,
+    "units_rows": 181,
+    "units_median_ratio": 1.0,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 7
+  },
+  {
+   "source_id": "holloway",
+   "client": "calder_valley",
+   "sample": "holloway_depot_20260708.csv",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 16,
+   "spend_usd": 0.0195,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": ";",
+     "want": ";"
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ",",
+     "want": ","
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "date_format": {
+     "ok": true,
+     "got": "dd.MM.yyyy",
+     "want": "dd.MM.yyyy"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "isin",
+     "want": "isin"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "ISIN"
+     ],
+     "want": [
+      "ISIN"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1.0,
+     "want": 1.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "Depot",
+     "want": "Depot"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "Stichtag",
+     "want": "Stichtag"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "Stueck",
+     "want": "Stueck"
+    },
+    "price": {
+     "ok": true,
+     "got": "Kurs",
+     "want": "Kurs"
+    },
+    "market_value": {
+     "ok": true,
+     "got": "Kurswert",
+     "want": "Kurswert"
+    },
+    "currency": {
+     "ok": true,
+     "got": "Waehrung",
+     "want": "Waehrung"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "Depot",
+      "Stichtag",
+      "ISIN",
+      "Bezeichnung",
+      "Stueck",
+      "Kurs",
+      "Kurswert",
+      "Waehrung"
+     ],
+     "want": [
+      "Depot",
+      "Stichtag",
+      "ISIN",
+      "Bezeichnung",
+      "Stueck",
+      "Kurs",
+      "Kurswert",
+      "Waehrung"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "Kurs",
+      "Kurswert",
+      "Stueck"
+     ],
+     "want": [
+      "Kurs",
+      "Kurswert",
+      "Stueck"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 116,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0086,
+    "units_rows": 116,
+    "units_median_ratio": 1.0,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 8
+  },
+  {
+   "source_id": "linden_wrexford",
+   "client": "wrexford",
+   "sample": "linden_gc_20260708.csv",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 20,
+   "spend_usd": 0.0407,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": ",",
+     "want": ","
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "yyyyMMdd",
+     "want": "yyyyMMdd"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "isin",
+     "want": "isin"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "ISIN"
+     ],
+     "want": [
+      "ISIN"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1.0,
+     "want": 1.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "AccountNo",
+     "want": "AccountNo"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "ValuationDate",
+     "want": "ValuationDate"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "Units",
+     "want": "Units"
+    },
+    "price": {
+     "ok": true,
+     "got": "ClosePrice",
+     "want": "ClosePrice"
+    },
+    "market_value": {
+     "ok": true,
+     "got": "MarketValueLocal",
+     "want": "MarketValueLocal"
+    },
+    "currency": {
+     "ok": true,
+     "got": "Currency",
+     "want": "Currency"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "AccountNo",
+      "ValuationDate",
+      "ISIN",
+      "SecurityName",
+      "Units",
+      "ClosePrice",
+      "MarketValueLocal",
+      "Currency"
+     ],
+     "want": [
+      "AccountNo",
+      "ValuationDate",
+      "ISIN",
+      "SecurityName",
+      "Units",
+      "ClosePrice",
+      "MarketValueLocal",
+      "Currency"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "ClosePrice",
+      "MarketValueLocal",
+      "Units"
+     ],
+     "want": [
+      "ClosePrice",
+      "MarketValueLocal",
+      "Units"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 116,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0172,
+    "units_rows": 116,
+    "units_median_ratio": 1.0,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 7
+  },
+  {
+   "source_id": "quayside",
+   "client": "wrexford",
+   "sample": "quayside_holdings_20260708.tsv",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 24,
+   "spend_usd": 0.026,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": "\t",
+     "want": "\t"
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "MM/dd/yyyy",
+     "want": "MM/dd/yyyy"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "cusip",
+     "want": "cusip"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "cusip"
+     ],
+     "want": [
+      "cusip"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1000.0,
+     "want": 1000.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "portfolio",
+     "want": "portfolio"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "as_at",
+     "want": "as_at"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "shares",
+     "want": "shares"
+    },
+    "price": {
+     "ok": true,
+     "got": "px",
+     "want": "px"
+    },
+    "market_value": {
+     "ok": true,
+     "got": "mv_000",
+     "want": "mv_000"
+    },
+    "currency": {
+     "ok": true,
+     "got": "ccy",
+     "want": "ccy"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "portfolio",
+      "as_at",
+      "cusip",
+      "description",
+      "shares",
+      "px",
+      "mv_000",
+      "ccy"
+     ],
+     "want": [
+      "portfolio",
+      "as_at",
+      "cusip",
+      "description",
+      "shares",
+      "px",
+      "mv_000",
+      "ccy"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "mv_000",
+      "px",
+      "shares"
+     ],
+     "want": [
+      "mv_000",
+      "px",
+      "shares"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 112,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0089,
+    "units_rows": 112,
+    "units_median_ratio": 1.0,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 8
+  },
+  {
+   "source_id": "book_positions",
+   "client": "calder_valley",
+   "sample": "book_positions_20260708.csv",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 28,
+   "spend_usd": 0.022,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": ",",
+     "want": ","
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "yyyy-MM-dd",
+     "want": "yyyy-MM-dd"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "security_id",
+     "want": "security_id"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "security_id"
+     ],
+     "want": [
+      "security_id"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1.0,
+     "want": 1.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "account_id",
+     "want": "account_id"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "as_of_date",
+     "want": "as_of_date"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "quantity",
+     "want": "quantity"
+    },
+    "price": {
+     "ok": true,
+     "got": null,
+     "want": null
+    },
+    "market_value": {
+     "ok": true,
+     "got": null,
+     "want": null
+    },
+    "currency": {
+     "ok": true,
+     "got": "currency",
+     "want": "currency"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "as_of_date",
+      "account_id",
+      "custodian",
+      "security_id",
+      "quantity",
+      "currency"
+     ],
+     "want": [
+      "as_of_date",
+      "account_id",
+      "custodian",
+      "security_id",
+      "quantity",
+      "currency"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "quantity"
+     ],
+     "want": [
+      "quantity"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 664,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0,
+    "units_rows": 0,
+    "units_median_ratio": null,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 7
+  },
+  {
+   "source_id": "wrexford_book",
+   "client": "wrexford",
+   "sample": "wrexford_book_20260708.txt",
+   "status": "drafted",
+   "attempts": 1,
+   "model_calls_total": 32,
+   "spend_usd": 0.016,
+   "note": "",
+   "fields": {
+    "format": {
+     "ok": true,
+     "got": "csv",
+     "want": "csv"
+    },
+    "delimiter": {
+     "ok": true,
+     "got": "|",
+     "want": "|"
+    },
+    "decimal_separator": {
+     "ok": true,
+     "got": ".",
+     "want": "."
+    },
+    "thousands_separator": {
+     "ok": true,
+     "got": "",
+     "want": ""
+    },
+    "date_format": {
+     "ok": true,
+     "got": "yyyy-MM-dd",
+     "want": "yyyy-MM-dd"
+    },
+    "identifier_type": {
+     "ok": true,
+     "got": "security_id",
+     "want": "security_id"
+    },
+    "identifier_columns": {
+     "ok": true,
+     "got": [
+      "ks_security_id"
+     ],
+     "want": [
+      "ks_security_id"
+     ]
+    },
+    "market_value_multiplier": {
+     "ok": true,
+     "got": 1.0,
+     "want": 1.0
+    },
+    "account_id": {
+     "ok": true,
+     "got": "portfolio",
+     "want": "portfolio"
+    },
+    "business_date": {
+     "ok": true,
+     "got": "valuation_date",
+     "want": "valuation_date"
+    },
+    "quantity": {
+     "ok": true,
+     "got": "units",
+     "want": "units"
+    },
+    "price": {
+     "ok": true,
+     "got": null,
+     "want": null
+    },
+    "market_value": {
+     "ok": true,
+     "got": null,
+     "want": null
+    },
+    "currency": {
+     "ok": true,
+     "got": "ccy",
+     "want": "ccy"
+    },
+    "columns": {
+     "ok": true,
+     "got": [
+      "valuation_date",
+      "portfolio",
+      "custodian_code",
+      "ks_security_id",
+      "units",
+      "ccy"
+     ],
+     "want": [
+      "valuation_date",
+      "portfolio",
+      "custodian_code",
+      "ks_security_id",
+      "units",
+      "ccy"
+     ]
+    },
+    "numeric_columns": {
+     "ok": true,
+     "got": [
+      "units"
+     ],
+     "want": [
+      "units"
+     ]
+    }
+   },
+   "dry_run_passed": true,
+   "dry_run": {
+    "rows": 228,
+    "parse_rate": 1.0,
+    "quarantine_rate": 0.0,
+    "quarantine_reasons": {},
+    "mapping_errors": 0,
+    "mapping_error_example": [],
+    "unresolved_rate": 0.0,
+    "units_rows": 0,
+    "units_median_ratio": null,
+    "units_suspect_rate": 0.0
+   },
+   "evidence_calls": 7
+  }
+ ]
+}

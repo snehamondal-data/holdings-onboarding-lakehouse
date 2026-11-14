@@ -21,27 +21,28 @@ MODEL = "claude-sonnet-5-5"
 PRICES = {"input": 2.00, "output": 10.00, "cache_write": 2.50, "cache_read": 0.10}
 MAX_CALLS = 14
 
-SYSTEM = """You onboard a new data source for Keelstone, an investment-data platform (all data is synthetic).
-You get one sample file from the source and read-only tools to inspect it. Draft the source's config by
-calling submit_draft once, when the evidence supports every field.
+SYSTEM = """You onboard a new data source for an investment-data platform (all data is synthetic).
+You get one sample file and read-only tools to inspect it. Work out how the file is laid out and draft
+the source's config by calling submit_draft once, when the tool results support every field.
 
-The engine maps every source into one canonical position model: account_id, business_date, quantity,
-price (optional), market_value (optional, in units of the position's currency after a multiplier) and
-currency, plus an identifier resolved against the security master: isin, cusip, ticker_exchange (two
-columns: ticker then exchange) or security_id (an internal id, used by books of record).
+The platform maps every source into one standard holdings model. For each holding: the holder reference,
+the business date, the amount held, the per-item quote (if the file has one), the position value (if the
+file has one) and the money code, plus an identifier that is looked up in the platform's security master.
 
-How to work: check the format and delimiter, list the columns, profile the columns you need, confirm
-the identifier with match_identifiers, confirm the units with estimate_units when the file has price and
-value, then submit. Facts to get right:
-- delimiter (null for JSON Lines); decimal_separator and thousands_separator: look at how numbers are
-  written (for example 3.802.151,16 means decimal ',' and thousands '.'). Most files use '.' and ''.
-- date_format: a pattern built from yyyy, MM and dd, e.g. yyyy-MM-dd, dd/MM/yyyy, MM/dd/yyyy, yyyyMMdd,
-  dd.MM.yyyy. When day and month are both 12 or less in the sample, prefer the pattern every value parses.
-- quantity: if positions carry nested tax lots, use the nested field (name[].field) so lots are summed.
-- market_value_multiplier: 1 when value = quantity x price; 1000 when the file reports value in thousands.
-- numeric_columns: columns holding quantities, prices or values (nested fields allowed).
-- columns: every column or key, in file order.
-Do not guess when a tool can tell you. Keep the evidence field short and cite tool results."""
+How to work: find the layout and the separator, list the fields, profile the fields you need, confirm
+which identifier scheme matches the security master, and when the file has both a quote and a position
+value, check how the value relates to amount held times quote. Then submit.
+
+Things to get right:
+- How numbers are written: which character marks decimals and which, if any, groups thousands. Read the
+  values; do not assume the most common convention.
+- The date pattern, written with yyyy, MM and dd and the file's own separator. Choose the pattern that
+  every sampled value parses with; if more than one does, say so in the evidence.
+- If each holding is split into an array of sub-records, map the amount held to the array's field so the
+  engine sums it (written array[].field, as list_columns shows).
+- The value multiplier: the factor that makes the position value equal amount held times quote.
+- Every field, in file order, and which fields hold numbers.
+Do not guess when a tool can tell you. Keep the evidence short and cite tool results."""
 
 
 class BudgetExceeded(RuntimeError):
@@ -105,6 +106,16 @@ class DraftResult:
                                               "evidence", "attempts", "note", "spend")}
 
 
+KIND_WORDS = {"custodian": "The file comes from a bank that holds the client's assets.",
+              "book_of_record": "The file is the client's own record of its holdings."}
+
+
+def first_message(kind: str) -> str:
+    """The only task-specific text the model sees before using its tools: no source id, no display
+    name, no file name (its extension would give away the format), no config values."""
+    return f"New source to onboard. {KIND_WORDS[kind]} A sample file is loaded; inspect it with the tools, then call submit_draft."
+
+
 def _block_get(b, k):
     return b.get(k) if isinstance(b, dict) else getattr(b, k, None)
 
@@ -112,9 +123,7 @@ def _block_get(b, k):
 def draft_source(model, sample: Sample, source_id: str, display_name: str, kind: str, landing_subdir: str,
                  spend: Spend, max_calls: int = MAX_CALLS, est_call_usd: float = 0.06) -> DraftResult:
     tools = TOOL_SCHEMAS + [SUBMIT_SCHEMA]
-    messages = [{"role": "user", "content": (
-        f"New source to onboard. source_id: {source_id}. display name: {display_name}. kind: {kind}. "
-        f"Sample file: {sample.file_name}. Inspect it with the tools, then call submit_draft.")}]
+    messages = [{"role": "user", "content": first_message(kind)}]
     result = DraftResult("needs_human", source_id)
     submits, nudged = 0, False
     for _ in range(max_calls):

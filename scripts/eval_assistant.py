@@ -17,7 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
-from keelstone.assistant.agent import MODEL, PRICES, SYSTEM, AnthropicModel, BudgetExceeded, Spend, draft_source  # noqa: E402
+from keelstone.assistant.agent import (KIND_WORDS, MODEL, PRICES, SYSTEM, AnthropicModel, BudgetExceeded, Spend,  # noqa: E402
+                                      draft_source, first_message)
 from keelstone.assistant.draft import SUBMIT_SCHEMA  # noqa: E402
 from keelstone.assistant.tools import TOOL_SCHEMAS  # noqa: E402
 from keelstone.config import load_source  # noqa: E402
@@ -54,6 +55,14 @@ def drafted_fields(draft_src) -> dict:
     return truth(draft_src)
 
 
+def prompt_fingerprint() -> str:
+    """SHA-256 of everything the model is told before it uses its tools, to show it did not change."""
+    import hashlib
+    blob = json.dumps({"system": SYSTEM, "tools": TOOL_SCHEMAS + [SUBMIT_SCHEMA],
+                       "first_messages": {k: first_message(k) for k in KIND_WORDS}}, sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
 def estimate() -> None:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key())
@@ -79,7 +88,9 @@ def estimate() -> None:
                       "eval_8_sources_usd_worst_case_no_cache": round(8 * no_cache, 2)}, indent=1))
 
 
-def run(budget: float) -> None:
+def run(budget: float, out_name: str) -> None:
+    fingerprint = prompt_fingerprint()
+    print("prompt fingerprint (before):", fingerprint)
     model, spend = AnthropicModel(api_key()), Spend(limit_usd=budget)
     rows = []
     for source_id, client in CASES:
@@ -88,7 +99,8 @@ def run(budget: float) -> None:
         sample = load_sample(sample_file, client)
         before = spend.spent_usd
         try:
-            r = draft_source(model, sample, source_id, real.display_name, real.kind, real.landing_subdir, spend)
+            # display name withheld: only the kind reaches the model, as plain words (first_message)
+            r = draft_source(model, sample, source_id, "withheld", real.kind, real.landing_subdir, spend)
         except BudgetExceeded as e:
             print("BUDGET STOP:", e)
             rows.append({"source_id": source_id, "status": "not_run_budget", "spend_usd": 0})
@@ -113,9 +125,11 @@ def run(budget: float) -> None:
         ok = sum(v["ok"] for v in row["fields"].values())
         print(f"{source_id:16} {r.status:11} fields {ok}/{len(FIELDS)} dry_run {row['dry_run_passed']} "
               f"${row['spend_usd']:.3f} (total ${spend.spent_usd:.3f})")
-    out = ROOT / "docs" / "eval" / "assistant_eval.json"
+    assert prompt_fingerprint() == fingerprint, "the prompt changed during the run"
+    out = ROOT / "docs" / "eval" / out_name
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({"model": MODEL, "sample_date": DATE, "total_spend_usd": round(spend.spent_usd, 4),
+    out.write_text(json.dumps({"model": MODEL, "sample_date": DATE, "prompt_sha256": fingerprint,
+                               "total_spend_usd": round(spend.spent_usd, 4),
                                "tokens": spend.tokens, "model_calls": spend.calls, "rows": rows}, indent=1, default=str))
     print("wrote", out)
 
@@ -124,5 +138,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("mode", choices=["estimate", "run"])
     p.add_argument("--budget-usd", type=float, default=1.80)
+    p.add_argument("--out", default="assistant_eval_clean.json")
+    p.add_argument("--fingerprint", action="store_true", help="print the prompt fingerprint and exit")
     a = p.parse_args()
-    estimate() if a.mode == "estimate" else run(a.budget_usd)
+    if a.fingerprint:
+        print(prompt_fingerprint())
+    else:
+        estimate() if a.mode == "estimate" else run(a.budget_usd, a.out)

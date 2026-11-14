@@ -6,7 +6,7 @@
 
 ## In one minute
 
-This project shows how a forward-deployed engineer at a fictional investment-data platform could bring a new client's holdings in from several custodian banks, each sending files in its own format. Files land in a Databricks lakehouse, are loaded exactly once, mapped into one standard position model, and reconciled against the client's own records, with every difference given a reason. Onboarding is configuration, not code: a fourth custodian took 34 lines of YAML and a second client 109, each reaching checked results within 14 minutes of its files arriving. Every run is checked against planted problems with known answers, so no row is lost or left unexplained, and running it again changes nothing. It was measured at up to 15 million rows, where one change made loading 2.1 times faster and another that did not help was dropped. Files can also arrive through an AWS landing zone that checks each file and forwards it, with results ready under 12 minutes after upload. An AI assistant drafts a new source's configuration from one sample file, tests it, and waits for a person to approve it; on eight known sources it got 127 of 128 fields right for 18 cents. All data and companies are synthetic.
+This project shows how a forward-deployed engineer at a fictional investment-data platform could bring a new client's holdings in from several custodian banks, each sending files in its own format. Files land in a Databricks lakehouse, are loaded exactly once, mapped into one standard position model, and reconciled against the client's own records, with every difference given a reason. Onboarding is configuration, not code: a fourth custodian took 34 lines of YAML and a second client 109, each reaching checked results within 14 minutes of its files arriving. Every run is checked against planted problems with known answers, so no row is lost or left unexplained, and running it again changes nothing. It was measured at up to 15 million rows, where one change made loading 2.1 times faster and another that did not help was dropped. Files can also arrive through an AWS landing zone that checks each file and forwards it, with results ready under 12 minutes after upload. An AI assistant drafts a new source's configuration from one sample file, tests it, and waits for a person to approve it; on eight known sources, with every hint from their configs removed from its prompt, it got all 128 fields right for 19 cents. All data and companies are synthetic.
 
 ## Results, slice by slice
 
@@ -18,7 +18,7 @@ This project shows how a forward-deployed engineer at a fictional investment-dat
 | 4. Onboarding by config | One Lakeflow Job per client on file arrival; a fourth custodian and a second client | Holloway Custody: 34 YAML lines, 2 generic engine changes, 13.9 min delivery to validated gold. Wrexford: 109 YAML lines, no engine change, 12.7 min |
 | 5. Scale | 1M, 5M and 15M rows; two optimisations tried | At 15M rows bronze went from 311 s to 147 s with parallel ingest (kept); liquid clustering by date gave no measurable gain (dropped) |
 | 6. AWS | S3 landing zone, validating forwarder Lambda, SQS dead-letter queue, CloudFormation | S3 upload to validated gold in 696 s; duplicates skipped, bad files quarantined, a simulated outage dead-lettered; everything torn down |
-| 7. AI assistant | Read-only agent drafts a source's YAML; dry run; human approval | Leave-one-out on 8 sources: 8/8 valid, 8/8 pass the dry run, 127/128 fields correct, $0.178 |
+| 7. AI assistant | Read-only agent drafts a source's YAML; dry run; human approval; leakage tests | Leave-one-out on 8 sources with a clean prompt: 8/8 valid, 8/8 pass the dry run, 128/128 fields correct, $0.187 (first run with leaked hints: 127/128) |
 
 ## Design decisions
 
@@ -296,30 +296,57 @@ AWS cost: estimated under $0.05 for the whole slice, all inside free-tier allowa
 - **Budget guard.** Every model call is costed (Sonnet 5.5: $2 input, $10 output, $2.50 cache write, $0.10 cache read per million tokens) and the loop stops before a call that could pass the budget. Prompt caching covers the growing prefix; server-side refusal fallback is enabled.
 - **Unit tests** (`tests/test_assistant.py`, 16 tests) use a scripted fake model, no API calls: tools on real generated samples, validation, the dry run catching a wrong multiplier and a wrong date format, the retry, the fallback, refusal, the budget stop, and approval as the only path that writes config.
 
-**Leave-one-out evaluation (one run, Claude Sonnet 5.5).** For each existing position source, the agent drafted a config from one ordinary day's file (2026-07-08) without seeing any config, and each field was scored against the real one (`scripts/eval_assistant.py`, results in `docs/eval/assistant_eval.json`):
+**Leave-one-out evaluation, two runs side by side (Claude Sonnet 5.5).** For each existing position source, the agent drafted a config from one ordinary day's file (2026-07-08) without access to any config, and each of 16 fields was scored against the real one (`scripts/eval_assistant.py`; results in `docs/eval/assistant_eval_leaked.json` and `docs/eval/assistant_eval_clean.json`).
 
-| Source (layout) | format | delim | dec sep | thou sep | date fmt | id type | id cols | units x | account | date col | qty | price | value | ccy | columns | numeric | Dry run | Score | Cost |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| harrow | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.022 |
-| linden | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.024 |
-| pemberton | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | pass | 15/16 | $0.023 |
-| holloway | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.023 |
-| linden_wrexford | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.022 |
-| quayside | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.024 |
-| book_positions | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.020 |
-| wrexford_book | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.021 |
+- **"With leaked hints"** is the first run. The YAML files were unreachable (proved below), but the model was still told things derived from them.
+- **"Clean"** is the single rerun after removing every hint. The prompt was written and frozen before the run and not changed after it; its SHA-256 (`05fc0a6aec41b556...`, over the system prompt, the tool definitions and the first messages) is recorded in the results and was checked before and after.
 
-Per field: format 8/8 · delim 8/8 · dec sep 8/8 · thou sep 8/8 · date fmt 8/8 · id type 8/8 · id cols 8/8 · units x 8/8 · account 8/8 · date col 8/8 · qty 8/8 · price 8/8 · value 8/8 · ccy 8/8 · columns 8/8 · numeric 7/8
+| Source | With leaked hints: fields | dry run | cost | Clean: fields | dry run | cost |
+|---|---|---|---|---|---|---|
+| harrow | 16/16 | pass | $0.022 | 16/16 | pass | $0.025 |
+| linden | 16/16 | pass | $0.024 | 16/16 | pass | $0.020 |
+| pemberton | 15/16 | pass | $0.023 | 16/16 | pass | $0.018 |
+| holloway | 16/16 | pass | $0.023 | 16/16 | pass | $0.019 |
+| linden_wrexford | 16/16 | pass | $0.022 | 16/16 | pass | $0.041 |
+| quayside | 16/16 | pass | $0.024 | 16/16 | pass | $0.026 |
+| book_positions | 16/16 | pass | $0.020 | 16/16 | pass | $0.022 |
+| wrexford_book | 16/16 | pass | $0.021 | 16/16 | pass | $0.016 |
+| **Total** | **127/128** | **8/8** | **$0.178** | **128/128** | **8/8** | **$0.187** |
 
-**Result: 8 of 8 drafts valid on the first submission, 8 of 8 passed the dry run, 127 of 128 fields correct.** Total cost **$0.178** (24 model calls), against an estimate of $1.58: the agent made 6 or 7 tool calls per source but in parallel, so it needed 3 model calls per source instead of the 10 assumed, and most of the prompt was read from the cache.
+| Field | With leaked hints | Clean |
+|---|---|---|
+| format | 8/8 | 8/8 |
+| delimiter | 8/8 | 8/8 |
+| decimal sep | 8/8 | 8/8 |
+| thousands sep | 8/8 | 8/8 |
+| date format | 8/8 | 8/8 |
+| identifier type | 8/8 | 8/8 |
+| identifier cols | 8/8 | 8/8 |
+| units multiplier | 8/8 | 8/8 |
+| account col | 8/8 | 8/8 |
+| date col | 8/8 | 8/8 |
+| quantity col | 8/8 | 8/8 |
+| price col | 8/8 | 8/8 |
+| value col | 8/8 | 8/8 |
+| currency col | 8/8 | 8/8 |
+| column list | 8/8 | 8/8 |
+| numeric cols | 7/8 | 8/8 |
 
-**The one miss.** Pemberton, `numeric_columns`: the draft also marked `lots[].cost_basis` as numeric. The values are numeric, so it is harmless (one more quarantine rule), but it is not what the real config says.
+**Result of the clean run: 8 of 8 drafts valid on the first submission, 8 of 8 passed the dry run, 128 of 128 fields correct, $0.187.** The first run's one miss (Pemberton also marked `lots[].cost_basis` as numeric) did not recur. With one run each, that difference is noise, not evidence that the clean prompt is better; what the clean run shows is that the result does not depend on the leaked hints.
 
-**What this does not show (honest limits).**
+**What leaked in the first run.** The held-out YAML file itself was never reachable (no file is opened during the agent loop; see `tests/test_eval_isolation.py`). But values from the configs reached the model by two other routes:
+1. **My system prompt was written knowing the answers.** It listed exactly the date formats our sources use (`yyyy-MM-dd, dd/MM/yyyy, MM/dd/yyyy, yyyyMMdd, dd.MM.yyyy`), gave Holloway's number style (`3.802.151,16`), the `name[].field` pattern Pemberton needs for tax lots, "1000 when the file reports value in thousands", and "security_id ... used by books of record". Run against that prompt, the new leakage test finds 24 scored values in it.
+2. **The first user message copied values from the held-out YAML**: the source id, its display name and `kind: custodian` or `kind: book_of_record` (`custodian` is also a column of the book of record), and the sample's file name, whose extension gives away the format.
+
+**What changed for the clean run.** The system prompt describes the standard holdings model in plain words with no formats, examples or column names; the tools' date candidates are every order of year, month and day with every common separator (30 patterns), not our list; the units suggestion is the nearest power of ten; tool descriptions avoid every column name; the first message says only whether the file comes from a bank or from the client's own records, with no source id, display name or file name.
+
+**How a test now prevents it.** `tests/test_prompt_leakage.py` fails if any scored value from any source YAML (longer than one character: a date pattern, an identifier type, a column name, a multiplier) appears in the system prompt, the tool definitions or the first user message of any eval case. Tokens are matched as whole words in any case, values with punctuation as substrings. The only exemption is the answer vocabulary of `submit_draft`'s own enums (formats and identifier schemes), in the tool definitions only, because an enum lists every option; a test checks the exemption is exactly that list. The test checks its own detector on planted leaks, and it fails on the first run's prompt. `tests/test_eval_isolation.py` keeps the runtime proof: for each held-out source, a scripted model calls every tool with arguments aimed at `config/sources/<id>.yml`, while every way Python can open or list a file is recorded; nothing may be opened, and tools that do not exist are rejected.
+
+**Still not shown (honest limits).**
 - The samples come from this project's own generator, whose formats the engine was built around; real custodian files are messier.
-- The system prompt's example of comma decimals (`3.802.151,16`) happens to be in Holloway's exact style, which may have helped on Holloway's separators.
-- One sample cannot reveal things only history shows: Linden's real config also carries versioned header aliases for a header change that happens later in the period; the draft (from a day before the change) does not, and the eval does not score it. Likewise required-field lists and display names are not scored.
-- One run, one model, eight sources: a small sample, not a benchmark.
+- One sample cannot reveal what only history shows: Linden's header change happens later in the period, so neither run drafts its versioned header aliases, and the eval does not score them (nor required-field lists or display names).
+- The model is told whether a file comes from a bank or from the client's own records; a person onboarding a source would know that.
+- One run each, one model, eight sources: a small sample, not a benchmark.
 
 ## Databricks Free Edition notes
 
