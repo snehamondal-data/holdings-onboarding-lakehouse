@@ -4,22 +4,61 @@
 
 ![Architecture](docs/architecture.png)
 
-A forward-deployed engineer at a fictional investment-data platform onboards a client whose holdings arrive from three custodians in three formats. Onboarding a new source should be a YAML file, not new code. Full spec: [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md).
+## In one minute
 
-## Status
+This project shows how a forward-deployed engineer at a fictional investment-data platform could bring a new client's holdings in from several custodian banks, each sending files in its own format. Files land in a Databricks lakehouse, are loaded exactly once, mapped into one standard position model, and reconciled against the client's own records, with every difference given a reason. Onboarding is configuration, not code: a fourth custodian took 34 lines of YAML and a second client 109, each reaching checked results within 14 minutes of its files arriving. Every run is checked against planted problems with known answers, so no row is lost or left unexplained, and running it again changes nothing. It was measured at up to 15 million rows, where one change made loading 2.1 times faster and another that did not help was dropped. Files can also arrive through an AWS landing zone that checks each file and forwards it, with results ready under 12 minutes after upload. An AI assistant drafts a new source's configuration from one sample file, tests it, and waits for a person to approve it; on eight known sources it got 127 of 128 fields right for 18 cents. All data and companies are synthetic.
 
-| Slice | What | Status |
+## Results, slice by slice
+
+| Slice | What was built | Measured result |
 |---|---|---|
-| 1 | Data in: generator with planted problems, landing volume, bronze via Auto Loader, quarantine | done |
-| 2 | Silver: config-driven mapping to one position model, security master resolution, units rule, dedupe | done |
-| 3 | Gold: trusted positions in USD, exposure, reconciliation with pending late files, AI/BI dashboard | done |
-| 4 | Orchestration per client (file arrival), a fourth custodian and a second client onboarded by config | done |
-| 5 | Scale and performance: 1M, 5M and 15M rows measured; one optimisation kept, one rejected | done |
-| 6 | AWS landing zone: S3, a validating forwarder Lambda, SQS dead-letter queue, all by CloudFormation | done |
-| 7 | AI onboarding assistant: drafts a new source's YAML from a sample; dry run; human approval; leave-one-out eval | done |
-| 8 | Docs: README, DISCOVERY, RUNBOOK | not started |
+| 1. Data in | Fixed-seed generator with every planted problem; landing volume; bronze via Auto Loader; quarantine | 422 files, each loaded once; a re-run ingests 0 rows; the re-sent duplicate loads once; all 8 corrupt rows quarantined with the right reason |
+| 2. Silver | Config-driven mapping to one position model; security master resolution; units rule; dedupe | 86,667 bronze rows = 85,995 silver + 193 quarantined + 475 unresolved + 4 deduplicated, file by file against ground truth; identical after re-run and full refresh |
+| 3. Gold | Trusted positions in USD, exposure, reconciliation, AI/BI dashboard | All 11 planted breaks found with the right reason, 0 unexplained; the late file shows as pending, then clears; tie-out 97.94 % |
+| 4. Onboarding by config | One Lakeflow Job per client on file arrival; a fourth custodian and a second client | Holloway Custody: 34 YAML lines, 2 generic engine changes, 13.9 min delivery to validated gold. Wrexford: 109 YAML lines, no engine change, 12.7 min |
+| 5. Scale | 1M, 5M and 15M rows; two optimisations tried | At 15M rows bronze went from 311 s to 147 s with parallel ingest (kept); liquid clustering by date gave no measurable gain (dropped) |
+| 6. AWS | S3 landing zone, validating forwarder Lambda, SQS dead-letter queue, CloudFormation | S3 upload to validated gold in 696 s; duplicates skipped, bad files quarantined, a simulated outage dead-lettered; everything torn down |
+| 7. AI assistant | Read-only agent drafts a source's YAML; dry run; human approval | Leave-one-out on 8 sources: 8/8 valid, 8/8 pass the dry run, 127/128 fields correct, $0.178 |
 
-## Layout
+## Design decisions
+
+- **Medallion layers.** Bronze keeps every file as received (plus source file, load time and content hash), silver standardises, gold holds the business tables. Nothing is ever lost, and each step can be tested on its own.
+- **Exactly once.** Auto Loader checkpoints load each file path once; a SHA-256 of each file's bytes catches the same file re-sent under a new name; every Delta write is idempotent per micro-batch.
+- **Onboarding is configuration.** Each source is a YAML file (format, separators, date format, identifier, units, column mapping); each client is a YAML file listing its sources. A script renders each client's pipeline, job and dashboard from its YAML.
+- **One schema per client.** Each client has its own Unity Catalog schema, volumes, pipeline and job; a test proves one client's pipeline reads nothing from another's schema, and Unity Catalog lineage confirms it on Databricks.
+- **Never drop a row.** Rows that fail a rule go to quarantine with the reason; identifiers that do not resolve go to an unresolved queue; reconciliation separates real breaks from rows already held upstream (`explained_upstream`).
+- **Proof built in.** The generator plants every problem with a known answer and writes ground truth to a separate `qa` schema that pipeline code may not read. Every job ends by validating against it.
+- **Declarative pipeline for silver and gold.** AUTO CDC (the pipeline form of MERGE) on natural keys for silver, materialized views for gold, so re-runs and full refreshes give identical tables.
+- **The AI assistant only drafts.** Read-only tools, a validated draft, a dry run, and a person approves before any config is written.
+
+## What onboarding taught the engine
+
+Adding a fourth custodian and a second client changed only YAML, except for two generic engine changes Holloway Custody's format needed: **any day, month and year order for dates** (it sends `dd.MM.yyyy`), and **decimal and thousands separators** (it writes `3.802.151,16`; without this a quantity like `38.700` would have been read as 38.7). The second client needed none. Details, plus the platform tooling added for many clients (the render script, the pipeline-slot wait, delivery-aware validation), are in [Slice 4](#slice-4-orchestration-and-onboarding-by-config).
+
+## Findings: Databricks Free Edition and AWS
+
+What did not work as expected, and what was done about it:
+
+| Where | Finding | What we did |
+|---|---|---|
+| Free Edition | Serverless compute could not reliably read bundle files under `/Workspace` (403 from workspace storage) | Jobs are notebook tasks that install the project wheel from a Unity Catalog volume and read YAML from it ([details](#workspace-file-limitation-and-the-wheel-in-a-volume-workaround)) |
+| Free Edition | One active pipeline per type | One pipeline per client; each client job waits for a free slot before starting its pipeline |
+| Free Edition | Deleting a pipeline leaves its tables owned by it during a restoration period, so a replacement pipeline is refused | Moved the tables with `ALTER ... SET TBLPROPERTIES ('pipelines.pipelineId' = ...)`, then a full refresh |
+| Free Edition | File-arrival triggers on volumes fire only for new files: not for overwrites, and not for files already there at the trigger's first check | Deliveries start a few minutes after a deploy; a re-sent file under the same name is a no-op by design |
+| Free Edition | No Spark UI on serverless | Measured from job timings, the pipeline event log, Delta details and query history instead |
+| Free Edition | Databricks cannot read an S3 bucket in your own account (no custom storage locations) | A forwarding Lambda puts files into the volume; production would use a Unity Catalog external location |
+| SQL warehouse | The result cache ignores comments and constant-folded filters, so repeated probe queries returned cached results | Each probe adds a different constant output column |
+| Databricks | A service principal needs the `workspace-access` entitlement before any API works | Granted by the identity script |
+| AWS | New-experience accounts are pinned to their home Region by AWS-managed service control policies (us-east-1 denied, home us-east-2 allowed) | Everything runs in us-east-2; found the hard way |
+| AWS | S3 tag values reject quotes and `*` | Tag values are reduced to allowed characters; the full reason stays in object metadata |
+
+## Documents
+
+- [docs/DISCOVERY.md](docs/DISCOVERY.md): the client's problem, users and success metrics, and how the project measured up
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): what to do when a custodian file is late, a header changes, unmapped securities spike, the Free Edition quota is hit, or the AWS forwarder dead-letters
+- [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md): the original spec
+
+## Repository layout
 
 ```
 config/clients/<client>.yml     which sources a client has, and its Unity Catalog schema
@@ -60,7 +99,9 @@ python scripts/deliver.py --client calder_valley --through 2026-08-11
 python scripts/deliver.py --client calder_valley --all
 ```
 
-## Design notes for slice 1
+## Slice details
+
+### Slice 1: data in
 
 - **Bronze is config-driven.** `ingest_bronze` reads the client YAML and starts one Auto Loader stream per listed source from that source's YAML. No source-specific code.
 - **Exactly once.** Auto Loader checkpoints load each file path once. A file re-sent under a new name is caught by a SHA-256 of its bytes and logged as `duplicate_content`. Every Delta write uses `txnAppId`/`txnVersion`, so a retried micro-batch is not written twice.
@@ -68,7 +109,7 @@ python scripts/deliver.py --client calder_valley --all
 - **Schema drift keeps loading.** Columns are matched by header name. Unknown columns go to `_rescued_data` and are logged per file in `bronze_schema_drift_log`. A known rename is mapped by a `column_aliases` entry in the source YAML.
 - **Ground truth stays out of the pipeline.** It lives locally in `data/ground_truth/` and in the `keelstone.qa` volume. A test fails if ingest (or later silver and gold) code references it. Only validation jobs read it.
 
-## Design notes for slice 2
+### Slice 2: silver
 
 - **Silver is a Lakeflow declarative pipeline.** A check on Free Edition showed a serverless pipeline installs the project wheel from the volume (`environment.dependencies`), loads its source file, records expectation counts in the event log, and AUTO CDC (the pipeline form of MERGE) keeps re-runs unchanged. So silver uses one pipeline rather than plain PySpark jobs.
 - **Mapping is config.** Each source YAML has a `silver:` section: which bronze column feeds each canonical field, the identifier type and columns, and the units multiplier. Dates use the format already in `rules.dates`. Pemberton's quantity is `lots[].quantity`, summed per position. Linden's renamed headers are `header_versions` in its YAML; bronze aliases are derived from them and every silver row records its `header_version`.
@@ -78,7 +119,7 @@ python scripts/deliver.py --client calder_valley --all
 - **Dedupe.** Identical rows within a file are collapsed by the natural-key MERGE; `silver_dedupe_log` records how many per file. `silver_key_conflicts` lists any natural key seen with different content, and must stay empty.
 - **Accounting.** For every file: bronze rows = silver + silver quarantine + unresolved + deduped. The Slice 2 job checks this, compares each part with the ground truth, and proves idempotency by snapshotting every silver table after an update, a re-run and a full refresh.
 
-## Design notes for slice 3
+### Slice 3: gold
 
 - **Gold is in the same pipeline as silver**, as materialized views over the silver tables. Free Edition allows one active pipeline per type; adding datasets to the existing pipeline needs no second one. Materialized views are recomputed from silver, so re-runs leave them unchanged.
 - **Trusted positions.** `gold_positions` is the client's book of record per business date, valued at closing prices, converted to USD with the FX table, with each position's reconciliation status attached.
@@ -89,9 +130,9 @@ python scripts/deliver.py --client calder_valley --all
 - **Measured on the slice 3 dataset (three custodians, 60 business days, seed 42; slice 4 results with Holloway Custody are below):** 33,374 positions compared; 32,687 matched; 11 breaks (4 quantity, 3 value, 2 missing at custodian, 2 missing in book, all planted); 676 explained upstream; 0 pending once every file arrived. Tie-out rate 97.94% overall, 98.78% on the last date, lowest 63.93% on 2026-08-25 (the day Linden sent values in units, quarantined as `units_scale_suspect`). Before the late Pemberton file arrived, its 187 book positions showed as pending and the tie-out rate was 98.50%.
 - **Dashboard.** `dashboards/gold_overview.lvdash.json` (AI/BI) is deployed by the bundle: tie-out rate over time, exposure by asset class and currency, non-matched positions by reason, and the break queue.
 
-## Slice 4: orchestration and onboarding by config
+### Slice 4: orchestration and onboarding by config
 
-### Onboarding by config: the numbers
+#### Onboarding by config: the numbers
 
 | | Holloway Custody (4th custodian for Calder Valley) | Wrexford County Firefighters' Pension Fund (2nd client) |
 |---|---|---|
@@ -104,7 +145,7 @@ python scripts/deliver.py --client calder_valley --all
 
 Generator and ground-truth additions for the new synthetic data (`src/keelstone/generator/clients.py`, `extra.py`) are not counted as onboarding: they create the test data, not the pipeline. Adding Holloway left every Harrow, Linden and Pemberton file byte-identical (a test checks this against the slices 1 to 3 dataset).
 
-### What onboarding taught the engine
+#### What onboarding taught the engine
 
 Two generic engine changes, both needed by Holloway Custody's file format and neither specific to any source:
 
@@ -117,11 +158,11 @@ Platform tooling added in this slice (needed to run many clients, not by any one
 - **`jobs/wait_for_pipeline_slot.py`** runs clients' pipelines one at a time (below).
 - **Delivery-aware validation.** The silver and gold validations check only files that have landed, read unresolved identifiers from a generic ground-truth list, and work out pending late files from the landing volume, so they hold for any client on any day.
 
-### The one-time table-ownership problem, and the fix
+#### The one-time table-ownership problem, and the fix
 
 Moving from slice 3's single `silver` pipeline to one pipeline per client meant deleting the old pipeline. Databricks keeps a deleted pipeline's tables in a restoration period and still treats them as owned by it, so the new Calder Valley pipeline was refused ("Table ... is already managed by pipeline ..."). Its pipeline task failed twice, about 15 minutes each, before the run was cancelled. Wrexford, a new schema, was not affected. The fix was the one Databricks documents: move each of the 17 silver and gold tables to the new pipeline with `ALTER STREAMING TABLE | MATERIALIZED VIEW ... SET TBLPROPERTIES ('pipelines.pipelineId' = '<new pipeline id>')`, then run the client job with `first_update=full_refresh`. It passed every check. This only happens when a pipeline is replaced, not when a client or source is onboarded; the same move is needed if the `demo` target replaces `dev`.
 
-### Orchestration
+#### Orchestration
 
 - **One Lakeflow Job per client**, generated from its YAML: file arrival on the client's landing volume, then setup, bronze ingest, wait for a free pipeline slot, the client's own silver and gold pipeline, then bronze, silver and gold validation against the ground truth.
 - **File-arrival triggers on Unity Catalog volumes work on Free Edition.** A test file landed at 21:17:23 and the triggered run started at 21:18:38; in the backfill, Wrexford's files triggered its run at 21:47:06. Two limits found: a file that lands before the trigger's first check after a deploy does not trigger a run, and overwriting an existing file with the same name does not trigger one either (only new files do).
@@ -130,7 +171,7 @@ Moving from slice 3's single `silver` pipeline to one pipeline per client meant 
 - **Re-running a date is idempotent.** All of Wrexford's 2026-08-20 files were delivered again under the same names (overwriting them). The next run ingested 0 files and 0 rows, and its update, re-run and full refresh left all 16 silver and gold tables identical, with every count still matching the ground truth. Calder Valley's run (full refresh, re-run, full refresh) did the same for its tables.
 - **Deploy targets.** `dev` (default) prefixes every name with `[dev <user>]`. `demo` has the same resources without the prefix, for screenshots: `KEELSTONE_TARGET=demo python scripts/deploy.py`. Deploy one or the other, not both: two pipelines cannot manage the same tables.
 
-### Results
+#### Results
 
 | | Calder Valley (4 custodians) | Wrexford (2 custodians) |
 |---|---|---|
@@ -142,11 +183,11 @@ Moving from slice 3's single `silver` pipeline to one pipeline per client meant 
 | Idempotency (update, re-run, full refresh) | every silver and gold table identical | every silver and gold table identical (after re-delivering a date) |
 | Lineage reads from another client's schema | none (1,003 lineage records checked) | none (115 lineage records checked; the first run found none yet, as lineage arrives with a delay) |
 
-### Client isolation
+#### Client isolation
 
 Each client has its own schema, landing volume, checkpoint volume, pipeline and job. `tests/test_client_isolation.py` builds each client's pipeline with recording stand-ins for Spark (no Spark needed), runs every dataset definition, and asserts that every table it reads is its own pipeline dataset or a table in its own schema, and never the other client's. On Databricks, the gold validation also checks Unity Catalog lineage for reads from other schemas.
 
-## Slice 5: scale and performance
+### Slice 5: scale and performance
 
 **Setup.** A separate `scale_test` client (own schema, landing volume, pipeline, job and dashboard), so the demo clients' tables and dashboards are untouched. The same generator in scale mode (`python scripts/generate.py --client scale_test --rows N`) streams 60 business days of clean data: a Harrow-layout CSV custodian, a Pemberton-layout JSON custodian with nested tax lots, and a matching book of record, all gzipped, plus the reference files. Its sources are new YAML files only. Each size was run through the normal client job (bronze, the silver and gold pipeline, every validation), then a `measure_performance` task recorded the numbers, and `scripts/probe_queries.py` timed four read queries on the SQL warehouse (2X-Small) with the result cache defeated. Every run passed every validation: all rows accounted for, every position tied out.
 
@@ -156,7 +197,7 @@ Each client has its own schema, landing volume, checkpoint volume, pipeline and 
 | 5M | 4,976,912 | 2,530,535 | 417 | 107 MB |
 | 15M | 14,933,118 | 7,610,960 | 1,250 | 311 MB |
 
-### Runtimes (all measured; numbers from `docs/perf/*_run.json`, table built by `scripts/perf_summary.py`)
+#### Runtimes (all measured; numbers from `docs/perf/*_run.json`, table built by `scripts/perf_summary.py`)
 
 | Size | Run | Rows ingested | Bronze s | Bronze rows/s | Pipeline s (wall) | Silver executor s | Gold executor s | Slowest flow (executor s) | Bronze files per table |
 |---|---|---|---|---|---|---|---|---|---|
@@ -169,7 +210,7 @@ Each client has its own schema, landing volume, checkpoint volume, pipeline and 
 
 "Rows ingested" includes the reference files. Silver and gold executor seconds are the pipeline event log's `executor_time_ms` summed per layer (work across all executors, so it can exceed wall-clock time).
 
-### Read queries (median of 3 runs, last run's bytes and files; `docs/perf/*_probes.json`)
+#### Read queries (median of 3 runs, last run's bytes and files; `docs/perf/*_probes.json`)
 
 | Size | Run | latest_day_exposure | one_week_recon_status | one_day_silver | one_account_history |
 |---|---|---|---|---|---|
@@ -178,7 +219,7 @@ Each client has its own schema, landing volume, checkpoint volume, pipeline and 
 | 15M | baseline | 750 ms, 37.9 MB, 1 files (0 pruned) | 565 ms, 0.3 MB, 1 files (0 pruned) | 673 ms, 36.7 MB, 5 files (0 pruned) | 603 ms, 37.3 MB, 5 files (0 pruned) |
 | 15M | + liquid clustering by business_date | 708 ms, 15.1 MB, 1 files (1 pruned) | 681 ms, 0.3 MB, 1 files (0 pruned) | 785 ms, 36.7 MB, 5 files (0 pruned) | 673 ms, 37.3 MB, 5 files (0 pruned) |
 
-### What the measurements show
+#### What the measurements show
 
 - **Bronze was the slowest stage at every size, and mostly fixed cost.** The 1M run took longer than the 5M run (226 s against 213 s): the eight source streams ran one after another, each paying for stream start-up, micro-batch planning and hashing every file's bytes, so throughput rose from 5,000 to 48,000 rows per second as the data grew.
 - **In the pipeline, the slowest flow is the AUTO CDC MERGE into `silver_positions`**: about 55 % of the pipeline's executor time at 15M (403 of 737 executor seconds). Gold is cheap by comparison (86 executor seconds at 15M). Every gold materialized view was refreshed by complete recompute (the event log's `planning_information`).
@@ -188,7 +229,7 @@ Each client has its own schema, landing volume, checkpoint volume, pipeline and 
 - **Run-to-run noise.** The pipeline ran four times on the identical 15M data: 251.5 s to 270.9 s (about 7.5 % apart). Differences smaller than that are not real.
 - **What is not available.** Serverless compute has no Spark UI, so there are no stage, task or shuffle-size numbers here. What is available and used: job task timings, the pipeline event log (per-flow rows, wall time and executor time, refresh technique), Delta table details (files, bytes, clustering), and query history metrics for the read queries (time, bytes and files read and pruned).
 
-### Optimisations, before and after on the same 15M data
+#### Optimisations, before and after on the same 15M data
 
 | Change | Before | After | Kept? |
 |---|---|---|---|
@@ -197,7 +238,7 @@ Each client has its own schema, landing volume, checkpoint volume, pipeline and 
 
 Both are generic, config-driven engine features (any client can switch them in its YAML). Re-running Calder Valley's and Wrexford's jobs after this slice found one validation gap (not caused by the slice 5 changes): the silver check compared expectation counts from the latest pipeline update only, and an incremental update with no new data records none. It now sums them over every update since the last full refresh; both clients then passed bronze, silver and gold validation. The final `scale_test` run with the kept configuration (parallel ingest on, clustering off) passed every validation; its pipeline took 270.9 s.
 
-## Slice 6: AWS landing zone
+### Slice 6: AWS landing zone
 
 **Why a forwarding Lambda.** In production, Databricks would read the S3 bucket directly: a Unity Catalog storage credential (an IAM role) and an external location on the bucket, with Auto Loader and the file-arrival trigger pointed at the S3 path. Databricks Free Edition has no account console and does not allow custom storage locations, so it cannot read a bucket in your own AWS account. This project therefore lands files in S3 and forwards them into the client's Unity Catalog volume through the Databricks Files API; from there the existing file-arrival trigger, pipeline and validations run unchanged. The forwarder also does the checks a landing zone should do before anything reaches the lakehouse.
 
@@ -243,7 +284,7 @@ AWS cost: estimated under $0.05 for the whole slice, all inside free-tier allowa
 
 **Production notes.** A production setup would (a) let Databricks read the bucket directly through a Unity Catalog storage credential and external location instead of forwarding files, and (b) deploy with a narrowly scoped CI/CD role limited to this stack's resources, not the account-wide `AccountFullAccessRole` (AdministratorAccess) used here from the CLI.
 
-## Slice 7: AI onboarding assistant
+### Slice 7: AI onboarding assistant
 
 **What it does.** Given one sample file from a new source, an agent (Claude Sonnet 5.5 through the Anthropic SDK) drafts that source's YAML config: format, delimiter, decimal and thousands separators, date format, identifier type and columns, units multiplier, and the mapping into the canonical position model.
 
