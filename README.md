@@ -16,7 +16,8 @@ A forward-deployed engineer at a fictional investment-data platform onboards a c
 | 4 | Orchestration per client (file arrival), a fourth custodian and a second client onboarded by config | done |
 | 5 | Scale and performance: 1M, 5M and 15M rows measured; one optimisation kept, one rejected | done |
 | 6 | AWS landing zone: S3, a validating forwarder Lambda, SQS dead-letter queue, all by CloudFormation | done |
-| 7 to 8 | AI assistant, docs | not started |
+| 7 | AI onboarding assistant: drafts a new source's YAML from a sample; dry run; human approval; leave-one-out eval | done |
+| 8 | Docs: README, DISCOVERY, RUNBOOK | not started |
 
 ## Layout
 
@@ -27,6 +28,8 @@ src/keelstone/generator/        fixed-seed generator that plants every problem i
 src/keelstone/ingest/           generic bronze ingest (one Auto Loader stream per configured source)
 src/keelstone/silver/           silver mapping (config to SQL), pipeline definitions, local mirror
 src/keelstone/gold/             reconciliation rules and gold pipeline definitions
+src/keelstone/assistant/        AI onboarding assistant: read-only tools, agent loop, draft + dry run
+onboarding/audit.jsonl          audit log of every draft, approval and rejection
 dashboards/                     AI/BI dashboard template and per-client dashboards (generated)
 pipelines/                      Lakeflow declarative pipeline source (thin; logic is in the wheel)
 src/keelstone/qa/               where ground truth lives; pipeline code may not import it
@@ -239,6 +242,43 @@ AWS cost: estimated under $0.05 for the whole slice, all inside free-tier allowa
 4. Outside us-east-1, `s3api create-bucket` needs an explicit `LocationConstraint`; the deploy script now sets it.
 
 **Production notes.** A production setup would (a) let Databricks read the bucket directly through a Unity Catalog storage credential and external location instead of forwarding files, and (b) deploy with a narrowly scoped CI/CD role limited to this stack's resources, not the account-wide `AccountFullAccessRole` (AdministratorAccess) used here from the CLI.
+
+## Slice 7: AI onboarding assistant
+
+**What it does.** Given one sample file from a new source, an agent (Claude Sonnet 5.5 through the Anthropic SDK) drafts that source's YAML config: format, delimiter, decimal and thousands separators, date format, identifier type and columns, units multiplier, and the mapping into the canonical position model.
+
+**How it is kept safe.**
+- **Read-only, typed tools only** (`src/keelstone/assistant/tools.py`, all `strict` schemas): describe the sample, read lines, sniff the delimiter, list columns (including nested lots), profile a column (sample values, number styles, date patterns, identifier shapes), check what share of identifiers match the security master as ISIN, CUSIP, security_id or ticker:exchange, and estimate the units multiplier from value / (quantity x price). No file writes, no shell, no access to any existing config; a test checks the assistant's code has no write or subprocess calls.
+- **The output must validate.** The agent ends by calling `submit_draft`; code (not the model) turns it into a config dict and validates it with `config.py`. An invalid draft gets the error back and one retry, then the result is "needs a human, here is what I found" with every tool call as evidence. A refusal, a stop without a draft, or the turn limit end the same way.
+- **Dry run before a person sees it.** The draft runs through the plain-Python rules engine on the sample: parse rate at least 98 %, quarantine rate at most 5 %, no mapping errors, unresolved-identifier rate at most 5 %, and for files with price and value a median value / (quantity x price) between 0.98 and 1.02 with at most 1 % of rows units-suspect.
+- **A human approves.** `python scripts/onboard_source.py draft | show | approve | reject`: `show` prints the draft YAML, the evidence and the dry run; only `approve` writes `config/sources/<id>.yml`, and it refuses a draft whose dry run failed unless the approver gives a reason. Every draft, approval, rejection and eval run is appended to `onboarding/audit.jsonl`.
+- **Budget guard.** Every model call is costed (Sonnet 5.5: $2 input, $10 output, $2.50 cache write, $0.10 cache read per million tokens) and the loop stops before a call that could pass the budget. Prompt caching covers the growing prefix; server-side refusal fallback is enabled.
+- **Unit tests** (`tests/test_assistant.py`, 16 tests) use a scripted fake model, no API calls: tools on real generated samples, validation, the dry run catching a wrong multiplier and a wrong date format, the retry, the fallback, refusal, the budget stop, and approval as the only path that writes config.
+
+**Leave-one-out evaluation (one run, Claude Sonnet 5.5).** For each existing position source, the agent drafted a config from one ordinary day's file (2026-07-08) without seeing any config, and each field was scored against the real one (`scripts/eval_assistant.py`, results in `docs/eval/assistant_eval.json`):
+
+| Source (layout) | format | delim | dec sep | thou sep | date fmt | id type | id cols | units x | account | date col | qty | price | value | ccy | columns | numeric | Dry run | Score | Cost |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| harrow | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.022 |
+| linden | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.024 |
+| pemberton | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | pass | 15/16 | $0.023 |
+| holloway | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.023 |
+| linden_wrexford | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.022 |
+| quayside | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.024 |
+| book_positions | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.020 |
+| wrexford_book | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | pass | 16/16 | $0.021 |
+
+Per field: format 8/8 · delim 8/8 · dec sep 8/8 · thou sep 8/8 · date fmt 8/8 · id type 8/8 · id cols 8/8 · units x 8/8 · account 8/8 · date col 8/8 · qty 8/8 · price 8/8 · value 8/8 · ccy 8/8 · columns 8/8 · numeric 7/8
+
+**Result: 8 of 8 drafts valid on the first submission, 8 of 8 passed the dry run, 127 of 128 fields correct.** Total cost **$0.178** (24 model calls), against an estimate of $1.58: the agent made 6 or 7 tool calls per source but in parallel, so it needed 3 model calls per source instead of the 10 assumed, and most of the prompt was read from the cache.
+
+**The one miss.** Pemberton, `numeric_columns`: the draft also marked `lots[].cost_basis` as numeric. The values are numeric, so it is harmless (one more quarantine rule), but it is not what the real config says.
+
+**What this does not show (honest limits).**
+- The samples come from this project's own generator, whose formats the engine was built around; real custodian files are messier.
+- The system prompt's example of comma decimals (`3.802.151,16`) happens to be in Holloway's exact style, which may have helped on Holloway's separators.
+- One sample cannot reveal things only history shows: Linden's real config also carries versioned header aliases for a header change that happens later in the period; the draft (from a day before the change) does not, and the eval does not score it. Likewise required-field lists and display names are not scored.
+- One run, one model, eight sources: a small sample, not a benchmark.
 
 ## Databricks Free Edition notes
 
